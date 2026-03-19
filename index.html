@@ -182,6 +182,18 @@
             header { padding: 15px; margin-bottom: 15px; }
             .title-area h1 { font-size: 22px; }
             .toolbar button { padding: 8px 15px; font-size: 14px; }
+            
+            /* ✅ 手機音量鍵及控制區的 RWD 優化，拉開間距增加觸控面積 */
+            .controls { gap: 12px; }
+            .btn-control { min-width: 50px; height: 50px; }
+            
+            /* ✅ 手機看歌詞的 RWD：縮小字體、微調間距避免過度換行 */
+            #lyrics-content {
+                font-size: 16px; 
+                padding: 15px;
+                line-height: 1.6;
+                word-break: break-word; /* 防止長單字溢出框線 */
+            }
         }
     </style>
 </head>
@@ -251,6 +263,8 @@
 
                     <div style="flex: 1; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border: 1px dashed rgba(255,255,255,0.2);">
                         <h3 style="color: #38ef7d; margin-top:0;">☁️ GitHub 一鍵同步設定</h3>
+                        <p style="color: #ccc; font-size: 13px; line-height: 1.5; margin-bottom: 15px;">為保護資安，請在此處填入 Token。系統將安全地儲存於您的瀏覽器中，不會寫入公開原始碼。</p>
+                        
                         <div class="form-group">
                             <label style="color:#38ef7d;">GitHub 帳號 (Owner)：</label>
                             <input type="text" id="gh-owner" placeholder="例如: your-username">
@@ -264,7 +278,6 @@
                             <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxx">
                         </div>
                         <button onclick="syncToGitHub()" class="btn-save-song btn-export" style="width: 100%; margin-top: 10px;">🚀 一鍵同步至 GitHub</button>
-                        <p style="font-size: 11px; color: #888; margin-top: 10px; line-height: 1.5;">* 此安全設計將把 Token 存在您的瀏覽器中，而非寫入程式碼，防止外洩風險。</p>
                     </div>
                 </div>
             </div>
@@ -402,6 +415,7 @@
         // 音量與片段循環控制
         // =========================================
         function adjustVolume(change) {
+            // ✅ 已解除手機裝置阻擋限制，直接傳送 YouTube 音量指令
             if (player && typeof player.getVolume === 'function') {
                 let currentVol = player.getVolume();
                 let newVol = currentVol + change;
@@ -633,6 +647,7 @@
 
         // =========================================
         // ✅ 修正 7：GitHub API 一鍵同步功能 (安全前端寫法)
+        // 讀取瀏覽器暫存的 GitHub 設定，避免每次重填
         // =========================================
         const savedGhPrefs = JSON.parse(localStorage.getItem('kalaok_gh_prefs'));
         if (savedGhPrefs) {
@@ -690,6 +705,7 @@
 
                 if (putRes.ok) {
                     alert("🎉 同步成功！GitHub 上的歌單已更新。");
+                    // 成功後將設定安全地存在瀏覽器本地端
                     localStorage.setItem('kalaok_gh_prefs', JSON.stringify({ owner, repo, token }));
                 } else {
                     const errorData = await putRes.json();
