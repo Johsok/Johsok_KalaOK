@@ -24,7 +24,6 @@
             overflow: hidden;
         }
         
-        /* ✅ 修正 1：標題與工具列置中設計 */
         header { 
             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px;
             padding: 20px 30px; margin-bottom: 20px; 
@@ -49,7 +48,6 @@
 
         main { display: flex; flex: 1; gap: 20px; overflow: hidden; }
         
-        /* ✅ 修正 2：調整版面比例，讓右側欄再小一點 (原本 6.5 vs 3.5，現改為 7.5 vs 2.5) */
         #left-panel { 
             flex: 7.5; position: relative; overflow: hidden; 
             background: rgba(20, 30, 40, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -103,8 +101,9 @@
         .btn-export { background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); box-shadow: 0 4px 15px rgba(56, 239, 125, 0.3); }
         .btn-export:hover { box-shadow: 0 6px 20px rgba(56, 239, 125, 0.6); }
 
+        /* ✅ 修正 3：歌詞區塊的文字排版優化，防止破版 */
         #lyrics-content { 
-            white-space: pre-wrap; font-size: 20px; line-height: 2; text-align: center; 
+            white-space: pre-wrap; word-wrap: break-word; font-size: 20px; line-height: 2; text-align: center; 
             color: #fff; background: rgba(0,0,0,0.3); padding: 30px; border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.05); text-shadow: 1px 1px 2px #000;
         }
@@ -164,24 +163,32 @@
         .save-status-info ul { margin: 10px 0 0 20px; padding: 0; list-style: disc; color: #bbb; line-height: 1.6; font-size: 14px; }
         .highlight-gh { color: #00f2fe; font-weight: bold; }
 
-        /* ✅ 修正 3：RWD 響應式設計 (手機與平板完美適配) */
+        /* RWD 響應式設計 (手機與平板完美適配) */
         @media (max-width: 900px) {
             body { height: auto; overflow: auto; padding: 10px; }
             main { flex-direction: column; overflow: visible; gap: 15px; }
             
-            /* 在手機上，左側（影片/歌詞）與右側（控制/清單）上下排列 */
             #left-panel { flex: none; height: 50vh; min-height: 350px; width: 100%; border-radius: 12px; }
             #right-panel { flex: none; height: auto; min-height: 400px; width: 100%; border-radius: 12px; }
             
-            .view-section { position: absolute; } /* 保持 absolute 才能在框框內切換 */
+            .view-section { position: absolute; } 
             
-            /* 新增與編輯在手機上改為上下排列 */
             .edit-container { flex-direction: column !important; }
             .edit-container > div { width: 100%; }
             
             header { padding: 15px; margin-bottom: 15px; }
             .title-area h1 { font-size: 22px; }
             .toolbar button { padding: 8px 15px; font-size: 14px; }
+
+            /* ✅ 修正 2：在手機尺寸下隱藏音量按鈕 (因為 iOS/Android 系統強制禁用網頁控制媒體音量) */
+            .btn-vol { display: none !important; }
+
+            /* ✅ 修正 3：在手機尺寸下縮小歌詞字體，並調整行距與內距避免破版 */
+            #lyrics-content {
+                font-size: 15px;
+                padding: 15px;
+                line-height: 1.8;
+            }
         }
     </style>
 </head>
@@ -194,9 +201,7 @@
         </div>
         <div class="toolbar">
             <button onclick="switchView('songs')" class="active">歌曲列表</button>
-            
             <button id="btn-toggle-lyrics" onclick="toggleLyrics()" title="進歌詞">看歌詞</button>
-            
             <button onclick="switchView('edit')">新增與編輯</button>
         </div>
     </header>
@@ -224,7 +229,7 @@
                     <strong>歌曲儲存與雲端同步設定：</strong>
                     <ul>
                         <li><span class="highlight-gh">第一步：</span> 輸入歌名與連結，點擊「儲存至本地暫存」。</li>
-                        <li><span class="highlight-gh">第二步：</span> 填寫下方 GitHub 資訊，點擊「一鍵同步至 GitHub」即可直接更新線上歌單！</li>
+                        <li><span class="highlight-gh">第二步：</span> 點擊「一鍵同步至 GitHub」即可直接更新線上歌單！</li>
                     </ul>
                 </div>
 
@@ -251,20 +256,11 @@
 
                     <div style="flex: 1; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border: 1px dashed rgba(255,255,255,0.2);">
                         <h3 style="color: #38ef7d; margin-top:0;">☁️ GitHub 一鍵同步設定</h3>
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">GitHub 帳號 (Owner)：</label>
-                            <input type="text" id="gh-owner" placeholder="例如: your-username">
-                        </div>
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">儲存庫名稱 (Repo)：</label>
-                            <input type="text" id="gh-repo" placeholder="例如: my-kalaok">
-                        </div>
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">Johsok_KaLaOK_Key (Token)：</label>
-                            <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxx">
-                        </div>
-                        <button onclick="syncToGitHub()" class="btn-save-song btn-export" style="width: 100%; margin-top: 10px;">🚀 一鍵同步至 GitHub</button>
-                        <p style="font-size: 11px; color: #888; margin-top: 10px; line-height: 1.5;">* 此安全設計將把 Token 存在您的瀏覽器中，而非寫入程式碼，防止外洩風險。</p>
+                        <p style="font-size: 14px; color: #ccc; line-height: 1.6;">
+                            系統已配置內部同步參數。<br><br>
+                            當您在左側完成「儲存至本地暫存」後，點擊下方按鈕，即可直接將新歌單覆蓋更新至 GitHub 上的 <code>song.json</code> 檔案中。
+                        </p>
+                        <button onclick="syncToGitHub()" class="btn-save-song btn-export" style="width: 100%; margin-top: 20px; padding: 15px; font-size: 16px;">🚀 一鍵同步至 GitHub</button>
                     </div>
                 </div>
             </div>
@@ -275,6 +271,7 @@
                 <div class="controls">
                     <button class="btn-control btn-vol" onclick="adjustVolume(-10)" title="音量減小">➖</button>
                     <button class="btn-control btn-vol" onclick="adjustVolume(10)" title="音量增大">➕</button>
+                    
                     <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
                     <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
                     <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
@@ -294,6 +291,16 @@
 
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
+        // =========================================
+        // ✅ 修正 1：GitHub 內部參數區 (請在這裡填入真實資料)
+        // ⚠️ 警告：若您的 GitHub 專案是公開的 (Public)，直接把真實 Token 寫在這裡並 push 上去
+        // GitHub 會自動偵測到外洩，並在幾秒鐘內「強制註銷」該 Token！
+        // 若您的專案是私有的 (Private)，則可以安全填入。
+        // =========================================
+        const GITHUB_OWNER = "您的GitHub帳號";        // 例如: johsok
+        const GITHUB_REPO = "您的Repo名稱";           // 例如: my-kalaok
+        const GITHUB_TOKEN = "Johsok_KaLaOK_Key";    // 請將字串替換為您真實的 ghp_ 開頭密碼
+
         let songs = []; 
         let playlist = JSON.parse(localStorage.getItem('kalaok_playlist')) || [];
         let currentPlayIndex = -1;
@@ -359,9 +366,7 @@
             currentPlayIndex = index;
             const song = playlist[index];
             
-            // 換歌時強制切換回 YouTube 畫面
             switchView('youtube'); 
-            
             clearLoop();
 
             if (!song.ytId || song.ytId.length !== 11) {
@@ -483,13 +488,10 @@
         }
 
         // =========================================
-        // ✅ 修正 6：智慧判斷的 歌詞/影片 雙切換功能
+        // 智慧判斷的 歌詞/影片 雙切換功能
         // =========================================
         function toggleLyrics() {
-            // 檢查當前是否在歌詞畫面
             const isLyrics = document.getElementById('view-lyrics').classList.contains('active');
-            
-            // 如果是歌詞，就切回 Youtube；反之切到歌詞
             if (isLyrics) {
                 switchView('youtube');
             } else {
@@ -507,12 +509,10 @@
                 if (targetView) targetView.classList.add('active');
             }
             
-            // 處理上方工具列按鈕狀態
             document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('active'));
             
             const lyricsBtn = document.getElementById('btn-toggle-lyrics');
             
-            // 根據不同頁面動態改變「歌詞按鈕」的文字與 title 提示
             if (viewName === 'lyrics') {
                 lyricsBtn.classList.add('active');
                 lyricsBtn.title = "回Youtube畫面";
@@ -522,7 +522,6 @@
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
             } else {
-                // 如果是在歌曲列表或新增編輯頁面
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
                 
@@ -632,23 +631,17 @@
         }
 
         // =========================================
-        // ✅ 修正 7：GitHub API 一鍵同步功能 (安全前端寫法)
+        // ✅ 修正 1：GitHub API 一鍵同步功能 (改為吃內部常數設定)
         // =========================================
-        const savedGhPrefs = JSON.parse(localStorage.getItem('kalaok_gh_prefs'));
-        if (savedGhPrefs) {
-            document.getElementById('gh-owner').value = savedGhPrefs.owner || '';
-            document.getElementById('gh-repo').value = savedGhPrefs.repo || '';
-            document.getElementById('gh-token').value = savedGhPrefs.token || '';
-        }
-
         async function syncToGitHub() {
-            const owner = document.getElementById('gh-owner').value.trim();
-            const repo = document.getElementById('gh-repo').value.trim();
-            const token = document.getElementById('gh-token').value.trim();
+            const owner = GITHUB_OWNER;
+            const repo = GITHUB_REPO;
+            const token = GITHUB_TOKEN;
             const path = 'song.json';
 
-            if (!owner || !repo || !token) {
-                alert("⚠️ 請完整填寫 GitHub 的帳號、儲存庫與 Token！");
+            // 防呆檢查
+            if (!owner || owner === "您的GitHub帳號" || !token || token === "Johsok_KaLaOK_Key") {
+                alert("⚠️ 請先在程式碼內部的 GitHub 參數區填寫真實的帳號與 Token！");
                 return;
             }
 
@@ -656,7 +649,6 @@
             if (!confirmSync) return;
 
             try {
-                // 1. 取得 GitHub 上舊檔案的 SHA 值
                 const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
                 const getRes = await fetch(getUrl, { 
                     headers: { 'Authorization': `token ${token}` } 
@@ -670,11 +662,9 @@
                     throw new Error("無法取得舊檔案資訊，請檢查設定與 Token 權限。");
                 }
 
-                // 2. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
                 const contentStr = JSON.stringify(songs, null, 4);
                 const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
 
-                // 3. 透過 PUT 請求更新檔案
                 const putRes = await fetch(getUrl, {
                     method: 'PUT',
                     headers: {
@@ -690,7 +680,6 @@
 
                 if (putRes.ok) {
                     alert("🎉 同步成功！GitHub 上的歌單已更新。");
-                    localStorage.setItem('kalaok_gh_prefs', JSON.stringify({ owner, repo, token }));
                 } else {
                     const errorData = await putRes.json();
                     alert(`❌ 同步失敗: ${errorData.message}`);
