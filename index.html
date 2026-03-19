@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>傑斯克的練歌世界 Johsok's  KaLa  OK</title>
+    <title>傑斯克的練歌世界 Johsok's KaLa OK (極致精美版)</title>
     <style>
         /* =========================================
            極致精美版：全域基礎重置與排版 
            ========================================= */
-        * { box-sizing: border-box; font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
-        button, .song-card, #playlist-ul li, .add-to-playlist-btn { transition: all 0.3s ease; }
-
+        * { box-sizing: border-box; font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif; transition: all 0.3s ease; }
+        
         /* 自訂滾動條 (Webkit) */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
@@ -19,27 +18,30 @@
 
         body { 
             margin: 0; padding: 20px; height: 100vh; display: flex; flex-direction: column; 
+            /* 深色漸層星空背景 */
             background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); 
             color: #e0e0e0; 
             overflow: hidden;
         }
         
-        /* 標題與工具列置中設計 */
+        /* 頂部 Header & 工具列 - 毛玻璃效果 (Glassmorphism) */
         header { 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px;
+            display: flex; justify-content: space-between; align-items: flex-end; 
             padding: 20px 30px; margin-bottom: 20px; 
             background: rgba(20, 30, 40, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); text-align: center;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         }
         .title-area h1 { margin: 0; font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
         .title-area h2 { margin: 5px 0 0 0; font-size: 16px; color: #4facfe; font-weight: bold; letter-spacing: 1px; }
         
-        .toolbar { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+        /* 科技感的工具列按鈕樣式 */
+        .toolbar { display: flex; gap: 12px; }
         .toolbar button { 
             padding: 10px 20px; cursor: pointer; font-size: 15px; font-weight: bold;
             background: rgba(255, 255, 255, 0.05); color: #ccc; 
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; 
+            box-shadow: inset 0 0 5px rgba(255, 255, 255, 0.05);
         }
         .toolbar button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; transform: translateY(-2px); }
         .toolbar button.active { 
@@ -47,26 +49,29 @@
             color: #fff; border: none; box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4); 
         }
 
+        /* 主要內容區塊切割 */
         main { display: flex; flex: 1; gap: 20px; overflow: hidden; }
         
-        /* 左側與右側版面配置 */
+        /* 左半邊 (顯示區) - 毛玻璃面板 */
         #left-panel { 
-            flex: 7.5; position: relative; overflow: hidden; 
+            flex: 6.5; position: relative; overflow: hidden; 
             background: rgba(20, 30, 40, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         }
         
+        /* 視圖隱藏機制：使用 visibility 確保背景加載正常 */
         .view-section { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 25px;
             visibility: hidden; opacity: 0; z-index: 0; pointer-events: none;
-            overflow-y: auto; transform: scale(0.98); transition: opacity 0.3s ease, transform 0.3s ease;
+            overflow-y: auto; transform: scale(0.98);
         }
         .view-section.active { 
             visibility: visible; opacity: 1; z-index: 1; pointer-events: auto; transform: scale(1);
         }
 
-        #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; }
+        /* 歌曲列表 (5欄 n列) */
+        #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
         .song-card { 
             padding: 15px; text-align: center; 
             background: rgba(0, 0, 0, 0.3); border-radius: 12px; 
@@ -74,147 +79,118 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
         .song-card:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.05); border-color: rgba(79, 172, 254, 0.5); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-        .song-card strong { margin-bottom: 5px; color: #fff; font-size: 14px; word-break: break-all; }
+        .song-card strong { margin-bottom: 5px; color: #fff; font-size: 15px; word-break: break-all; }
         
-        /* ✅ 歌曲庫按鈕區：加入與刪除按鈕排版 */
-        .card-btn-group { display: flex; gap: 10px; margin-top: 10px; }
-        
+        /* 歌名旁邊的小圖標按鈕 */
         .add-to-playlist-btn {
-            width: 35px; height: 35px; flex-shrink: 0; 
+            width: 32px; height: 32px; flex-shrink: 0; margin-top: 10px;
             background: rgba(255,255,255,0.1); color: #fff; border: none; border-radius: 50%;
             display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 20px; font-weight: bold;
         }
         .add-to-playlist-btn:hover { background: #00f2fe; color: #000; box-shadow: 0 0 10px #00f2fe; transform: scale(1.1); }
         .add-to-playlist-btn::before { content: '+'; margin-top: -2px; }
 
-        /* ✅ 新增：歌曲庫刪除按鈕樣式 */
-        .delete-song-btn {
-            width: 35px; height: 35px; flex-shrink: 0;
-            background: rgba(255,75,43,0.1); color: #ff4b2b; border: none; border-radius: 50%;
-            display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 16px;
-        }
-        .delete-song-btn:hover { background: #ff4b2b; color: #fff; box-shadow: 0 0 10px #ff4b2b; transform: scale(1.1); }
-
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #4facfe; font-weight: bold; font-size: 14px; }
+        /* 編輯表單 - 精美樣式 */
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #4facfe; font-weight: bold; font-size: 15px; }
         .form-group input, .form-group textarea { 
-            width: 100%; padding: 10px 15px; font-size: 14px;
+            width: 100%; padding: 12px 15px; font-size: 15px;
             background: rgba(0, 0, 0, 0.4); color: #fff; 
-            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; transition: border 0.3s;
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; 
         }
         .form-group input:focus, .form-group textarea:focus { border-color: #4facfe; background: rgba(0, 0, 0, 0.6); box-shadow: 0 0 10px rgba(79, 172, 254, 0.3); outline: none; }
-        .form-group textarea { height: 120px; resize: vertical; }
+        .form-group textarea { height: 180px; resize: vertical; }
         
         .btn-save-song { 
-            padding: 10px 20px; cursor: pointer; font-size: 14px; font-weight: bold; border: none;
+            padding: 12px 25px; cursor: pointer; font-size: 15px; font-weight: bold; border: none;
             background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); color: #fff; border-radius: 8px; 
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3); margin-right: 10px; transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3); margin-right: 15px;
         }
         .btn-save-song:hover { box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6); transform: translateY(-2px); }
-        
+        .btn-export { background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); box-shadow: 0 4px 15px rgba(56, 239, 125, 0.3); }
+        .btn-export:hover { box-shadow: 0 6px 20px rgba(56, 239, 125, 0.6); }
+
+        /* 歌詞區 */
         #lyrics-content { 
             white-space: pre-wrap; font-size: 20px; line-height: 2; text-align: center; 
             color: #fff; background: rgba(0,0,0,0.3); padding: 30px; border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.05); text-shadow: 1px 1px 2px #000;
         }
 
-        #view-youtube { padding: 0; }
+        /* Youtube 播放器容器 */
+        #view-youtube { padding: 0; /* 讓影片滿版 */ }
         #youtube-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #000; position: relative; }
         .fallback-iframe { width: 100%; height: 100%; border: none; }
 
+        /* 右半邊 (控制與播放列表) - 毛玻璃面板 */
         #right-panel { 
-            flex: 2.5; display: flex; flex-direction: column; z-index: 2; min-width: 250px;
+            flex: 3.5; display: flex; flex-direction: column; z-index: 2;
             background: rgba(20, 30, 40, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); overflow: hidden;
         }
         
-        .controls-wrapper { display: flex; flex-direction: column; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .controls { display: flex; padding: 15px 10px 5px 10px; gap: 8px; justify-content: space-around; flex-wrap: wrap; }
-        .loop-controls { padding: 5px 10px 15px 10px; border-top: 1px dashed rgba(255,255,255,0.05); }
+        /* 右上控制列 */
+        .controls { display: flex; padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); gap: 15px; justify-content: space-around; background: rgba(0,0,0,0.2); }
         
+        /* 播放控制按鈕 - 擬真發光按鈕 */
         .btn-control { 
-            flex: 1; height: 45px; min-width: 45px;
-            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; 
+            width: 80px; height: 55px; 
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; 
             display: inline-flex; justify-content: center; align-items: center; 
             cursor: pointer; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
         .btn-control:hover { background: rgba(255, 255, 255, 0.15); border-color: #4facfe; box-shadow: 0 0 15px rgba(79, 172, 254, 0.4); transform: translateY(-2px); }
 
-        .btn-vol { font-size: 16px; color: #fff; font-weight: bold; }
-        
-        .btn-loop { flex-direction: column; font-size: 13px; color: #fff; }
-        .btn-loop span { font-size: 10px; color: #4facfe; margin-top: 2px; font-family: monospace; letter-spacing: 1px;}
-        .btn-loop.active { border-color: #38ef7d; background: rgba(56, 239, 125, 0.1); box-shadow: 0 0 10px rgba(56, 239, 125, 0.3); }
+        /* 回放 5 秒 (精美向左雙三角) */
+        .icon-rewind::before, .icon-rewind::after { 
+            content: ''; display: block; border-style: solid; border-width: 12px 16px 12px 0; border-color: transparent #fff transparent transparent; position: absolute; top: 50%; transform: translateY(-50%);
+        }
+        .icon-rewind::before { left: 20px; } .icon-rewind::after { left: 30px; }
 
-        .icon-rewind::before, .icon-rewind::after { content: ''; display: block; border-style: solid; border-width: 8px 12px 8px 0; border-color: transparent #fff transparent transparent; position: absolute; top: 50%; transform: translateY(-50%); }
-        .icon-rewind::before { left: 50%; margin-left: -12px; } .icon-rewind::after { left: 50%; margin-left: -2px; }
+        /* 快轉 5 秒 (精美向右雙三角) */
+        .icon-fastforward::before, .icon-fastforward::after { 
+            content: ''; display: block; border-style: solid; border-width: 12px 0 12px 16px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%);
+        }
+        .icon-fastforward::before { left: 22px; } .icon-fastforward::after { left: 32px; }
 
-        .icon-fastforward::before, .icon-fastforward::after { content: ''; display: block; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%); }
-        .icon-fastforward::before { left: 50%; margin-left: -10px; } .icon-fastforward::after { left: 50%; margin-left: 0px; }
+        /* 下一首 (精美右三角 + 直線) */
+        .icon-next::before { 
+            content: ''; display: block; border-style: solid; border-width: 12px 0 12px 16px; border-color: transparent transparent transparent #fff; margin-right: 6px; 
+        }
+        .icon-next::after { content: ''; display: block; width: 4px; height: 24px; background-color: #fff; border-radius: 2px; }
 
-        .icon-next::before { content: ''; display: block; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; margin-right: 4px; }
-        .icon-next::after { content: ''; display: block; width: 3px; height: 16px; background-color: #fff; border-radius: 2px; }
-
-        .playlist-area { padding: 15px; flex: 1; overflow-y: auto; }
-        .playlist-area h3 { margin-top: 0; color: #4facfe; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; font-size: 16px; }
+        /* 播放列表 */
+        .playlist-area { padding: 20px; flex: 1; overflow-y: auto; }
+        .playlist-area h3 { margin-top: 0; color: #4facfe; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
         #playlist-ul { list-style: none; padding: 0; margin: 0; }
         #playlist-ul li { 
-            padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; cursor: pointer; 
-            border-radius: 8px; margin-bottom: 5px; background: rgba(0,0,0,0.2); font-size: 14px;
+            padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; cursor: pointer; 
+            border-radius: 8px; margin-bottom: 5px; background: rgba(0,0,0,0.2);
         }
         #playlist-ul li:hover { background: rgba(255,255,255,0.1); transform: translateX(5px); }
         #playlist-ul li.playing { background: linear-gradient(90deg, rgba(79,172,254,0.3) 0%, rgba(0,242,254,0.3) 100%); border-left: 4px solid #00f2fe; color: #fff; font-weight: bold; }
-        .remove-btn { color: #ff4b2b; cursor: pointer; background: rgba(255,75,43,0.1); border: none; font-size: 14px; width: 25px; height: 25px; border-radius: 50%; display: flex; justify-content: center; align-items: center; transition: all 0.2s; }
+        .remove-btn { color: #ff4b2b; cursor: pointer; background: rgba(255,75,43,0.1); border: none; font-size: 18px; width: 30px; height: 30px; border-radius: 50%; display: flex; justify-content: center; align-items: center; }
         .remove-btn:hover { background: #ff4b2b; color: #fff; box-shadow: 0 0 10px #ff4b2b; }
 
-        .save-status-info { background: rgba(0, 0, 0, 0.4); border-left: 4px solid #4facfe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-        .save-status-info strong { color: #fff; font-size: 16px; }
-
-        /* 新增：重設 Token 按鈕樣式 */
-        .btn-reset-token {
-            background: rgba(255, 75, 43, 0.15); border: 1px solid #ff4b2b; color: #ff4b2b; 
-            border-radius: 4px; padding: 4px 10px; cursor: pointer; margin-left: 10px; font-size: 12px;
-            transition: all 0.3s ease;
-        }
-        .btn-reset-token:hover { background: #ff4b2b; color: #fff; }
-
-        /* RWD 響應式設計 (手機與平板完美適配) */
-        @media (max-width: 900px) {
-            body { height: auto; overflow: auto; padding: 10px; }
-            main { flex-direction: column; overflow: visible; gap: 15px; }
-            
-            #left-panel { flex: none; height: 50vh; min-height: 350px; width: 100%; border-radius: 12px; }
-            #right-panel { flex: none; height: auto; min-height: 400px; width: 100%; border-radius: 12px; }
-            
-            .view-section { position: absolute; }
-            
-            header { padding: 15px; margin-bottom: 15px; }
-            .title-area h1 { font-size: 22px; }
-            .toolbar button { padding: 8px 15px; font-size: 14px; }
-            
-            .controls { gap: 12px; }
-            .btn-control { min-width: 50px; height: 50px; }
-            
-            #lyrics-content {
-                font-size: 16px; 
-                padding: 15px;
-                line-height: 1.6;
-                word-break: break-word; 
-            }
-        }
+        /* 編輯存檔說明區塊 */
+        .save-status-info { background: rgba(0, 0, 0, 0.4); border-left: 4px solid #4facfe; padding: 20px; border-radius: 0 8px 8px 0; margin-bottom: 25px; }
+        .save-status-info strong { color: #fff; font-size: 18px; }
+        .save-status-info ul { margin: 12px 0 0 25px; padding: 0; list-style: disc; color: #bbb; line-height: 1.8; }
+        .highlight-gh { color: #00f2fe; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <header>
         <div class="title-area">
-            <h1>傑．斯．克 的 練 歌 世 界</h1>
-            <h2>Johsok’s  KaLa  OK</h2>
+            <h1>傑斯克的練歌世界</h1>
+            <h2>Johsok’s KaLa OK (極致精美版)</h2>
         </div>
         <div class="toolbar">
             <button onclick="switchView('songs')" class="active">歌曲列表</button>
-            <button id="btn-toggle-lyrics" onclick="toggleLyrics()" title="進歌詞">看歌詞</button>
+            <button onclick="switchView('lyrics')">歌詞</button>
+            <button onclick="switchView('youtube')">顯示Youtube影像</button>
             <button onclick="switchView('edit')">新增與編輯</button>
         </div>
     </header>
@@ -233,53 +209,44 @@
 
             <div id="view-youtube" class="view-section">
                 <div id="youtube-container">
-                    <div id="player" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>
+                    <div id="player"></div>
                 </div>
             </div>
 
             <div id="view-edit" class="view-section">
-                <div class="edit-container" style="max-width: 600px; margin: 0 auto;">
-                    <div class="save-status-info">
-                        <strong>點擊「儲存」將同時儲存至本地並自動同步至 GitHub 雲端！</strong><br>
-                        <span style="font-size: 12px; color: #aaa;">(首次儲存時會要求您輸入 GitHub Token，並安全記憶於此瀏覽器中)</span>
-                        <button onclick="resetGitHubToken()" class="btn-reset-token" title="清除瀏覽器記憶的 Token">重設 Token</button>
-                    </div>
-
-                    <h3 style="color: #4facfe; margin-top:0;">新增/編輯歌曲</h3>
-                    <div class="form-group">
-                        <label>歌曲名稱：</label>
-                        <input type="text" id="edit-title" placeholder="輸入歌名">
-                    </div>
-                    <div class="form-group">
-                        <label>Youtube 連結：</label>
-                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: https://www.youtube.com/watch?v=K4DyBUG242c">
-                    </div>
-                    <div class="form-group">
-                        <label>歌詞：</label>
-                        <textarea id="edit-lyrics" placeholder="貼上歌詞..."></textarea>
-                    </div>
-                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button onclick="saveAndSyncSong()" class="btn-save-song" style="flex: 1; text-align: center;">儲存</button>
-                        <button onclick="exportJson()" class="btn-save-song" style="background: rgba(255,255,255,0.1); color:#ccc; box-shadow:none;">手動下載 JSON</button>
-                    </div>
+                <div class="save-status-info">
+                    <strong>歌曲儲存說明 (GitHub Pages 專用版)：</strong>
+                    <ul>
+                        <li><span class="highlight-gh">第一步：儲存至本地暫存。</span> 點擊左方藍色按鈕，歌曲會存在您的瀏覽器中。</li>
+                        <li><span class="highlight-gh">第二步：下載更新檔。</span> 點擊右方綠色按鈕，下載 <code>song.json</code>。</li>
+                        <li><span class="highlight-gh">第三步：上傳至 GitHub。</span> 覆蓋上傳到您的 GitHub 儲存庫即可更新歌單！</li>
+                    </ul>
+                </div>
+                <h3 style="color: #4facfe; margin-top:0;">新增/編輯歌曲</h3>
+                <div class="form-group">
+                    <label>歌曲名稱：</label>
+                    <input type="text" id="edit-title" placeholder="輸入歌名">
+                </div>
+                <div class="form-group">
+                    <label>Youtube 連結：</label>
+                    <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: https://www.youtube.com/watch?v=Nv8JqM1pEnI">
+                </div>
+                <div class="form-group">
+                    <label>歌詞：</label>
+                    <textarea id="edit-lyrics" placeholder="貼上歌詞..."></textarea>
+                </div>
+                <div style="margin-top: 25px; display: flex; gap: 15px;">
+                    <button onclick="saveSong()" class="btn-save-song">1. 儲存至本地暫存</button>
+                    <button onclick="exportJson()" class="btn-save-song btn-export">2. 下載匯出 song.json</button>
                 </div>
             </div>
         </div>
 
         <div id="right-panel">
-            <div class="controls-wrapper">
-                <div class="controls">
-                    <button class="btn-control btn-vol" onclick="adjustVolume(-10)" title="音量減小">➖</button>
-                    <button class="btn-control btn-vol" onclick="adjustVolume(10)" title="音量增大">➕</button>
-                    <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
-                    <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
-                    <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
-                </div>
-                <div class="controls loop-controls">
-                    <button class="btn-control btn-loop" id="btn-loop-start" onclick="setLoopStart()" title="設定循環起點">開始<br><span>--:--</span></button>
-                    <button class="btn-control btn-loop" id="btn-loop-end" onclick="setLoopEnd()" title="設定循環終點">結束<br><span>--:--</span></button>
-                    <button class="btn-control btn-loop" onclick="clearLoop()" title="清除循環設定">✖<br><span>清除</span></button>
-                </div>
+            <div class="controls">
+                <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
+                <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
+                <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
             </div>
             <div class="playlist-area">
                 <h3>播放列表</h3>
@@ -290,37 +257,15 @@
 
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
+        // --- 資料初始化 ---
         let songs = []; 
         let playlist = JSON.parse(localStorage.getItem('kalaok_playlist')) || [];
         let currentPlayIndex = -1;
         let player = null;
+        let isPlayerReady = false; 
+        let isUsingFallback = false;
 
-        let loopStart = null;
-        let loopEnd = null;
-        let loopInterval = null;
-
-        // ✅ 修正 2：偵測 iOS 設備，因 iOS Safari 限制使用 JS 調整影片音量，故自動將音量按鈕隱藏
-        document.addEventListener("DOMContentLoaded", () => {
-            // 透過 userAgent 或 touch 事件判斷是否為 iOS 裝置 (包含 iPadOS)
-            const isIOS = [
-                'iPad Simulator', 'iPhone Simulator', 'iPod Simulator',
-                'iPad', 'iPhone', 'iPod'
-            ].includes(navigator.platform) || 
-            (navigator.userAgent.includes("Mac") && "ontouchend" in document); 
-            
-            if (isIOS) {
-                // 如果是 iOS，選取所有音量按鈕並隱藏
-                document.querySelectorAll('.btn-vol').forEach(btn => {
-                    btn.style.display = 'none';
-                });
-                console.log("偵測到 iOS 設備，已隱藏音量控制按鈕。");
-            }
-        });
-
-        function onYouTubeIframeAPIReady() {
-            console.log("YouTube API 已準備就緒");
-        }
-
+        // 優化 YouTube 網址解析函數
         function extractVideoID(url) {
             let videoID = "";
             const match = url.match(/^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/);
@@ -335,6 +280,7 @@
             return videoID;
         }
 
+        // --- 1. 從伺服器讀取 song.json ---
         fetch('song.json')
             .then(response => {
                 if (!response.ok) throw new Error("無 json 檔案");
@@ -356,133 +302,100 @@
                 if(songs.length === 0) {
                     songs.push({
                         id: Date.now(),
-                        title: "測試音樂 - NCS 無版權電音",
-                        ytId: "K4DyBUG242c", 
-                        lyrics: "這是一首保證可播放的無版權測試歌曲！\n\n因為很多官方 MV 會鎖住禁止在第三方網站播放，導致變成黑畫面。"
+                        title: "大頭針 - 無情的雨無情的你",
+                        ytId: "Nv8JqM1pEnI", 
+                        lyrics: "這是一首測試歌曲。"
                     });
                     saveToStorage();
                 }
                 renderSongGrid();
             });
 
-        // 防彈級的 iframe 強制注入法
+        // =========================================
+        // 核心更新：拔除自訂警告，靜默 fallback 到官方 iframe
+        // =========================================
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
             currentPlayIndex = index;
             const song = playlist[index];
             
+            // 確保切換到視圖
             switchView('youtube'); 
-            clearLoop();
-
+            
             if (!song.ytId || song.ytId.length !== 11) {
                 alert("無效的 Youtube ID，請編輯該歌曲！");
                 switchView('songs'); return;
             }
 
+            // 徹底清空舊的播放器容器
             const container = document.getElementById('youtube-container');
-            const origin = window.location.origin; 
+            container.innerHTML = '<div id="player"></div>';
+            isPlayerReady = false;
+            isUsingFallback = false;
 
-            container.innerHTML = `
-                <iframe id="yt-iframe" class="fallback-iframe"
-                    src="https://www.youtube.com/embed/${song.ytId}?autoplay=1&enablejsapi=1&origin=${origin}&rel=0" 
-                    title="YouTube video player" 
-                    frameborder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                    allowfullscreen>
-                </iframe>
-            `;
-
-            setTimeout(() => {
-                if (typeof YT !== 'undefined' && YT.Player) {
-                    player = new YT.Player('yt-iframe', {
-                        events: {
-                            'onStateChange': (event) => {
-                                if (event.data === YT.PlayerState.ENDED) playNext();
-                            }
+            // 嘗試使用 API 載入影片
+            if (typeof YT !== 'undefined' && YT.Player) {
+                player = new YT.Player('player', {
+                    height: '100%', width: '100%', videoId: song.ytId,
+                    host: 'https://www.youtube.com',
+                    playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1 },
+                    events: {
+                        'onReady': () => { 
+                            isPlayerReady = true; 
+                        },
+                        'onStateChange': (event) => {
+                            if (event.data === YT.PlayerState.ENDED) playNext();
+                        },
+                        'onError': (e) => {
+                            console.error("YouTube Player API 回報錯誤:", e.data);
+                            // 修正重點：不再跳出阻擋視窗，只要有錯，直接切換成原生的 iframe
+                            injectFallbackIframe(song.ytId);
                         }
-                    });
-                }
-            }, 300);
+                    }
+                });
+            } else {
+                // 如果 YT API 根本沒載入成功，直接啟動降級方案
+                injectFallbackIframe(song.ytId);
+            }
             
             renderPlaylist();
             updateLyricsView();
         }
 
-        // 音量與片段循環控制
-        function adjustVolume(change) {
-            if (player && typeof player.getVolume === 'function') {
-                let currentVol = player.getVolume();
-                let newVol = currentVol + change;
-                if (newVol > 100) newVol = 100;
-                if (newVol < 0) newVol = 0;
-                player.setVolume(newVol);
-            } else {
-                console.log("播放器尚未完全載入，無法調整音量");
-            }
+        // =========================================
+        // 降級備用方案：使用你提供的嚴謹 iframe 參數
+        // =========================================
+        function injectFallbackIframe(ytId) {
+            console.warn("啟動原生的 iframe 備用方案...");
+            isUsingFallback = true;
+            const container = document.getElementById('youtube-container');
+            // 這裡完全採用你提供的 iframe 屬性，包含 nocookie 網域與跨域策略
+            container.innerHTML = `
+                <iframe class="fallback-iframe"
+                    src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1" 
+                    title="YouTube video player" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                    referrerpolicy="strict-origin-when-cross-origin" 
+                    allowfullscreen>
+                </iframe>
+            `;
         }
 
-        function formatTime(seconds) {
-            if (seconds === null || seconds === undefined) return "--:--";
-            const m = Math.floor(seconds / 60);
-            const s = Math.floor(seconds % 60);
-            return `${m}:${s < 10 ? '0' : ''}${s}`;
-        }
-
-        function setLoopStart() {
-            if (player && typeof player.getCurrentTime === 'function') {
-                loopStart = player.getCurrentTime();
-                document.getElementById('btn-loop-start').innerHTML = `開始<br><span>${formatTime(loopStart)}</span>`;
-                document.getElementById('btn-loop-start').classList.add('active');
-                checkLoopStatus();
-            }
-        }
-
-        function setLoopEnd() {
-            if (player && typeof player.getCurrentTime === 'function') {
-                let currentTime = player.getCurrentTime();
-                if (loopStart !== null && currentTime <= loopStart) {
-                    alert("結束時間必須晚於開始時間喔！");
-                    return;
-                }
-                loopEnd = currentTime;
-                document.getElementById('btn-loop-end').innerHTML = `結束<br><span>${formatTime(loopEnd)}</span>`;
-                document.getElementById('btn-loop-end').classList.add('active');
-                checkLoopStatus();
-            }
-        }
-
-        function clearLoop() {
-            loopStart = null;
-            loopEnd = null;
-            if (loopInterval) clearInterval(loopInterval);
-            document.getElementById('btn-loop-start').innerHTML = `開始<br><span>--:--</span>`;
-            document.getElementById('btn-loop-end').innerHTML = `結束<br><span>--:--</span>`;
-            document.getElementById('btn-loop-start').classList.remove('active');
-            document.getElementById('btn-loop-end').classList.remove('active');
-        }
-
-        function checkLoopStatus() {
-            if (loopInterval) clearInterval(loopInterval);
-            if (loopStart !== null && loopEnd !== null) {
-                loopInterval = setInterval(() => {
-                    if (player && typeof player.getCurrentTime === 'function') {
-                        if (player.getCurrentTime() >= loopEnd) {
-                            player.seekTo(loopStart, true);
-                        }
-                    }
-                }, 200);
-            }
-        }
-
+        // 快轉與回放核心機制
         function seekVideo(seconds) {
-            if (player && typeof player.getCurrentTime === 'function') {
+            // 如果是在備用模式下，提示無法快轉
+            if (isUsingFallback) {
+                alert("因啟用了原生備用播放模式，暫時無法從外部控制快轉/回放。");
+                return;
+            }
+            if (player && isPlayerReady && typeof player.getCurrentTime === 'function') {
                 let currentTime = player.getCurrentTime();
                 player.seekTo(currentTime + seconds, true);
-            } else {
-                console.log("播放器正在載入中，或尚未開始播放");
             }
         }
 
+        // 下一首
         function playNext() {
             if (playlist.length === 0) return;
             let nextIndex = currentPlayIndex + 1;
@@ -490,47 +403,18 @@
             playSong(nextIndex);
         }
 
-        function toggleLyrics() {
-            const isLyrics = document.getElementById('view-lyrics').classList.contains('active');
-            if (isLyrics) {
-                switchView('youtube');
-            } else {
-                switchView('lyrics');
-            }
-        }
-
+        // --- 視圖切換與渲染 ---
         function switchView(viewName) {
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            
-            if (viewName === 'youtube') {
-                document.getElementById('view-youtube').classList.add('active');
-            } else {
-                const targetView = document.getElementById(`view-${viewName}`);
-                if (targetView) targetView.classList.add('active');
-            }
+            document.getElementById(`view-${viewName}`).classList.add('active');
             
             document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('active'));
-            const lyricsBtn = document.getElementById('btn-toggle-lyrics');
-            
-            if (viewName === 'lyrics') {
-                lyricsBtn.classList.add('active');
-                lyricsBtn.title = "回Youtube畫面";
-                lyricsBtn.innerText = "回影片";
-            } else if (viewName === 'youtube') {
-                lyricsBtn.classList.add('active');
-                lyricsBtn.title = "進歌詞";
-                lyricsBtn.innerText = "看歌詞";
-            } else {
-                lyricsBtn.title = "進歌詞";
-                lyricsBtn.innerText = "看歌詞";
-                const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(viewName === 'edit' ? '新增與編輯' : '歌曲列表'));
-                if(activeBtn) activeBtn.classList.add('active');
-            }
+            const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(viewName === 'edit' ? '新增與編輯' : viewName));
+            if(activeBtn) activeBtn.classList.add('active');
 
             if (viewName === 'songs') renderSongGrid();
         }
 
-        // ✅ 修正：歌曲庫渲染時，加入獨立的「刪除按鈕」
         function renderSongGrid() {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
@@ -540,10 +424,7 @@
                 card.className = 'song-card';
                 card.innerHTML = `
                     <strong>${song.title}</strong>
-                    <div class="card-btn-group">
-                        <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
-                        <button class="delete-song-btn" onclick="deleteSong(${song.id})" title="從歌曲庫刪除">🗑️</button>
-                    </div>
+                    <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
                 `;
                 grid.appendChild(card);
             });
@@ -574,6 +455,7 @@
             }
         }
 
+        // --- 播放列表與儲存功能 ---
         function addToPlaylist(songId) {
             const song = songs.find(s => s.id === songId);
             if (song) {
@@ -588,28 +470,14 @@
             if (index < currentPlayIndex) currentPlayIndex--;
             else if (index === currentPlayIndex) {
                 currentPlayIndex = -1; 
-                document.getElementById('youtube-container').innerHTML = '<div id="player" style="color:#666;">請從下方播放列表選擇歌曲。</div>';
+                document.getElementById('youtube-container').innerHTML = '<div id="player"></div>';
             }
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
             renderPlaylist();
             updateLyricsView();
         }
 
-        // ✅ 新增：刪除歌曲並同步 GitHub 的功能
-        async function deleteSong(songId) {
-            if (!confirm("確定要從歌曲庫中刪除這首歌嗎？\n(這將同步刪除 GitHub 上的記錄)")) return;
-            
-            // 從陣列中剔除
-            songs = songs.filter(s => s.id !== songId);
-            saveToStorage();
-            renderSongGrid();
-            
-            // 呼叫同步
-            await syncToGitHub("刪除歌曲同步");
-        }
-
-        // ✅ 修改：合併「儲存」與「同步」為單一動作
-        async function saveAndSyncSong() {
+        function saveSong() {
             const title = document.getElementById('edit-title').value.trim();
             const ytUrl = document.getElementById('edit-yt').value.trim();
             const lyrics = document.getElementById('edit-lyrics').value.trim();
@@ -626,10 +494,8 @@
             document.getElementById('edit-yt').value = '';
             document.getElementById('edit-lyrics').value = '';
             
+            alert("✅ 歌曲已成功暫存！");
             switchView('songs'); 
-            
-            // 呼叫底層同步
-            await syncToGitHub("新增歌曲同步");
         }
 
         function saveToStorage() {
@@ -648,101 +514,10 @@
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 0);
         }
 
-        // =========================================
-        // ✅ 全新安全機制：手動重設/清除 Token
-        // =========================================
-        function resetGitHubToken() {
-            if(confirm("確定要清除瀏覽器中記憶的 GitHub Token 嗎？\n下次儲存或刪除歌曲時，系統將會重新要求您輸入。")) {
-                localStorage.removeItem('github_kalaok_token');
-                alert("✅ Token 已成功清除！");
-            }
-        }
-
-        // =========================================
-        // ✅ 全新架構：使用 LocalStorage 安全彈窗記憶 Token
-        // =========================================
-        async function syncToGitHub(actionMessage = "Auto-sync song.json") {
-            const owner = 'Johsok';
-            const repo = 'Johsok_KalaOK';
-            const path = 'song.json';
-
-            // 1. 從瀏覽器 LocalStorage 中嘗試取得 Token
-            let token = localStorage.getItem('github_kalaok_token');
-            
-            // 2. 如果沒有記憶 Token，則彈出視窗要求使用者輸入
-            if (!token) {
-                token = prompt("請輸入您的 GitHub Token (Fine-grained PAT)：\n\n💡 這串密碼只會安全地記憶在您現在使用的瀏覽器中，不會寫入原始碼。");
-                
-                // 如果使用者按取消或沒輸入
-                if (!token || token.trim() === '') {
-                    alert("✅ 歌曲已成功儲存至本機。\n\n⚠️ 提示：因未輸入 Token，本次操作無法同步至 GitHub。");
-                    return; 
-                }
-                
-                // 儲存至瀏覽器
-                token = token.trim();
-                localStorage.setItem('github_kalaok_token', token);
-            }
-
-            try {
-                // 3. 取得 GitHub 上舊檔案的 SHA 值
-                const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-                const getRes = await fetch(getUrl, { 
-                    headers: { 'Authorization': `token ${token}` } 
-                });
-                
-                let sha = null;
-                if (getRes.ok) {
-                    const getData = await getRes.json();
-                    sha = getData.sha;
-                } else if (getRes.status === 401 || getRes.status === 403) {
-                    // 偵測到身分驗證錯誤 (Token 錯誤或過期)
-                    throw new Error(`401_UNAUTHORIZED`);
-                } else if (getRes.status !== 404) {
-                    const errorText = await getRes.text();
-                    throw new Error(`無法取得舊檔案資訊，狀態碼: ${getRes.status}。詳細: ${errorText}`);
-                }
-
-                // 4. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
-                const contentStr = JSON.stringify(songs, null, 4);
-                const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
-
-                // 5. 透過 PUT 請求更新檔案
-                const putRes = await fetch(getUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: actionMessage,
-                        content: base64Content,
-                        sha: sha 
-                    })
-                });
-
-                if (putRes.ok) {
-                    alert(actionMessage.includes("刪除") ? "🗑️ 歌曲已刪除並完成 GitHub 同步！" : "🎉 儲存成功！已連動更新至 GitHub 雲端。");
-                } else {
-                    if (putRes.status === 401 || putRes.status === 403) throw new Error(`401_UNAUTHORIZED`);
-                    const errorData = await putRes.json();
-                    throw new Error(errorData.message);
-                }
-
-            } catch(e) {
-                console.error(e);
-                // 如果是 Token 失效的錯誤，自動清除 localStorage 並提醒使用者
-                if (e.message.includes("401_UNAUTHORIZED")) {
-                    localStorage.removeItem('github_kalaok_token');
-                    alert("❌ GitHub Token 驗證失敗！\n您的 Token 可能輸入錯誤、權限不足，或是已經過期。\n\n系統已自動清除舊密碼，請下次重新輸入。");
-                } else {
-                    alert(`❌ 同步發生錯誤：\n${e.message}\n\n請檢查 F12 控制台資訊。`);
-                }
-            }
-        }
-
+        // 初始化執行
         renderPlaylist();
         switchView('songs');
+
     </script>
 </body>
 </html>
