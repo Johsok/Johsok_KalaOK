@@ -149,8 +149,8 @@
             background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
             transition: background 0.2s;
         }
-        .sortable-item.dragging { opacity: 0.8; background: rgba(79, 172, 254, 0.5); border-color: #00f2fe; }
-        .sortable-item.drag-over { border: 2px dashed #00f2fe; }
+        .sortable-item.dragging, #playlist-ul li.dragging { opacity: 0.8; background: rgba(79, 172, 254, 0.5); border-color: #00f2fe; }
+        .sortable-item.drag-over, #playlist-ul li.drag-over { border: 2px dashed #00f2fe; }
         .drag-handle { cursor: grab; padding: 0 15px 0 5px; font-size: 18px; color: #aaa; }
         .drag-handle:active { cursor: grabbing; }
 
@@ -176,14 +176,13 @@
         .loop-controls { padding: 5px 10px 15px 10px; border-top: 1px dashed rgba(255,255,255,0.05); }
         
         .btn-control { 
-            flex: 1; height: 45px; min-width: 45px;
+            flex: 1; height: 45px; min-width: 40px;
             background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; 
             display: inline-flex; justify-content: center; align-items: center; 
             cursor: pointer; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            font-size: 16px; color: #fff; font-weight: bold;
         }
         .btn-control:hover { background: rgba(255, 255, 255, 0.15); border-color: #4facfe; box-shadow: 0 0 15px rgba(79, 172, 254, 0.4); transform: translateY(-2px); }
-
-        .btn-vol { font-size: 16px; color: #fff; font-weight: bold; }
         
         .btn-loop { flex-direction: column; font-size: 13px; color: #fff; }
         .btn-loop span { font-size: 10px; color: #4facfe; margin-top: 2px; font-family: monospace; letter-spacing: 1px;}
@@ -195,7 +194,7 @@
         .icon-fastforward::before, .icon-fastforward::after { content: ''; display: block; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%); }
         .icon-fastforward::before { left: 50%; margin-left: -10px; } .icon-fastforward::after { left: 50%; margin-left: 0px; }
 
-        /* 修改：全新的全螢幕 Icon (取代原來的下一首) */
+        /* 全螢幕 Icon */
         .icon-fullscreen::before {
             content: ''; display: block; width: 14px; height: 14px;
             border: 2px solid #fff; border-radius: 2px; transition: all 0.2s;
@@ -210,7 +209,11 @@
         }
         #playlist-ul li:hover { background: rgba(255,255,255,0.1); transform: translateX(5px); }
         #playlist-ul li.playing { background: linear-gradient(90deg, rgba(79,172,254,0.3) 0%, rgba(0,242,254,0.3) 100%); border-left: 4px solid #00f2fe; color: #fff; font-weight: bold; }
-        .remove-btn { color: #ff4b2b; cursor: pointer; background: rgba(255,75,43,0.1); border: none; font-size: 14px; width: 25px; height: 25px; border-radius: 50%; display: flex; justify-content: center; align-items: center; transition: all 0.2s; }
+        
+        .drag-handle-playlist { cursor: grab; padding-right: 10px; font-size: 16px; color: #aaa; display: inline-block; }
+        .drag-handle-playlist:active { cursor: grabbing; }
+
+        .remove-btn { color: #ff4b2b; cursor: pointer; background: rgba(255,75,43,0.1); border: none; font-size: 14px; width: 25px; height: 25px; border-radius: 50%; display: flex; justify-content: center; align-items: center; transition: all 0.2s; flex-shrink: 0;}
         .remove-btn:hover { background: #ff4b2b; color: #fff; box-shadow: 0 0 10px #ff4b2b; }
 
         .save-status-info { background: rgba(0, 0, 0, 0.4); border-left: 4px solid #4facfe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
@@ -230,8 +233,8 @@
             .title-area h1 { font-size: 22px; }
             .toolbar button { padding: 8px 15px; font-size: 14px; }
             
-            .controls { gap: 12px; }
-            .btn-control { min-width: 50px; height: 50px; }
+            .controls { gap: 8px; }
+            .btn-control { min-width: 40px; height: 45px; }
             
             #lyrics-content {
                 font-size: 16px; 
@@ -317,7 +320,9 @@
                     <button class="btn-control btn-vol" onclick="adjustVolume(10)" title="音量增大">➕</button>
                     <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
                     <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
+                    <button class="btn-control" onclick="togglePlayPause()" title="播放/暫停">⏯</button>
                     <button class="btn-control icon-fullscreen" onclick="toggleCustomFullscreen()" title="全螢幕"></button>
+                    <button class="btn-control" onclick="clearPlaylist()" title="清空播放列表">🗑️</button>
                 </div>
                 <div class="controls loop-controls">
                     <button class="btn-control btn-loop" id="btn-loop-start" onclick="setLoopStart()" title="設定循環起點">開始<br><span>--:--</span></button>
@@ -326,7 +331,7 @@
                 </div>
             </div>
             <div class="playlist-area">
-                <h3>播放列表</h3>
+                <h3>播放列表 (可拖曳排序)</h3>
                 <ul id="playlist-ul"></ul>
             </div>
         </div>
@@ -342,7 +347,7 @@
         const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
         let songs = []; 
-        // 播放列表存在本地 Session/Local 中即可，不需要存資料庫
+        // 播放列表存在本地 Session/Local 中
         let playlist = JSON.parse(localStorage.getItem('kalaok_playlist')) || [];
         let currentPlayIndex = -1;
         let player = null;
@@ -512,7 +517,7 @@
         }
 
         // =========================================
-        // 修改：歌曲拖曳排序並存回 Supabase
+        // 歌曲拖曳排序並存回 Supabase
         // =========================================
         let dragSrcEl = null;
 
@@ -580,27 +585,48 @@
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return;
 
-            // ⚠️ 提醒：請在 Supabase 的 songs 資料表中新增一個名為 sort_order 的 int4 欄位！
-            // 整理需要更新的陣列資料 (加入新的 sort_order)
-            const updates = songs.map((song, index) => {
-                return {
-                    id: song.id,
-                    title: song.title,
-                    ytId: song.ytId,
-                    lyrics: song.lyrics,
-                    sort_order: index // 寫入目前的陣列順序
-                };
-            });
-
             try {
-                // 使用 upsert 批次更新
-                const { error } = await supabaseClient.from('songs').upsert(updates);
-                if (error) throw error;
+                // 修改：避免使用 upsert 觸發 RLS 的 INSERT 規則報錯
+                // 我們改用 Promise.all 批次發送 .update() 請求，只更新有異動的排序欄位
+                const updatePromises = songs.map((song, index) => {
+                    return supabaseClient
+                        .from('songs')
+                        .update({ sort_order: index }) // 只更新排序數字
+                        .eq('id', song.id);            // 指定更新哪一筆
+                });
 
-                alert("✅ 歌曲排序已成功更新至 Supabase！\n(請確保資料庫中有 sort_order 欄位)");
+                await Promise.all(updatePromises);
+
+                alert("✅ 歌曲排序已成功更新至 Supabase！");
             } catch (err) {
                 console.error("更新排序失敗:", err);
                 alert(`❌ 儲存排序時發生錯誤：\n${err.message}`);
+            }
+        }
+
+        // =========================================
+        // 同步播放列表至 Supabase 的函式
+        // =========================================
+        async function syncPlaylistToSupabase() {
+            // 此處嘗試將播放列表同步到 supabase (需要您手動在後台新增 saved_playlist table)
+            // 若失敗也不會阻擋本地 localStorage 的儲存運作
+            try {
+                // 先清空舊有的播放清單
+                await supabaseClient.from('saved_playlist').delete().neq('id', 0); 
+                
+                // 準備寫入新的排序清單
+                const insertData = playlist.map((song, index) => ({
+                    id: Date.now() + index, // 隨機產生 ID
+                    ytId: song.ytId,
+                    title: song.title,
+                    sort_order: index
+                }));
+
+                if (insertData.length > 0) {
+                    await supabaseClient.from('saved_playlist').insert(insertData);
+                }
+            } catch (e) {
+                console.warn("⚠️ 同步播放列表至資料庫失敗。請確保您已在 Supabase 建立 'saved_playlist' 資料表，欄位需有 id, ytId, title, sort_order。目前播放列表已存於您的本地端。");
             }
         }
 
@@ -622,7 +648,7 @@
             return videoID;
         }
 
-        // 修改：優化 iframe 載入邏輯，完美支援手機自動播放
+        // 優化 iframe 載入邏輯，完美支援手機自動播放
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
             currentPlayIndex = index;
@@ -666,6 +692,38 @@
                 player.loadVideoById(song.ytId);
             }
             
+            renderPlaylist();
+            updateLyricsView();
+        }
+
+        // 新增：暫停 / 播放 音樂
+        function togglePlayPause() {
+            if (player && typeof player.getPlayerState === 'function') {
+                const state = player.getPlayerState();
+                if (state === YT.PlayerState.PLAYING) {
+                    player.pauseVideo();
+                } else {
+                    player.playVideo();
+                }
+            }
+        }
+
+        // 新增：清空播放列表
+        function clearPlaylist() {
+            if (playlist.length === 0) return;
+            if (!confirm("確定要清空整個播放列表嗎？")) return;
+            
+            playlist = [];
+            currentPlayIndex = -1;
+            if (player && typeof player.stopVideo === 'function') {
+                player.stopVideo();
+            }
+            // 還原無播放器的提示畫面
+            document.getElementById('youtube-container').innerHTML = '<div id="yt-player-placeholder" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>';
+            player = null; 
+
+            localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
+            syncPlaylistToSupabase();
             renderPlaylist();
             updateLyricsView();
         }
@@ -756,7 +814,7 @@
             }
         }
 
-        // 修改：加入自訂全螢幕邏輯 (將左側面板滿版放大)
+        // 自訂全螢幕邏輯 (將左側面板滿版放大)
         function toggleCustomFullscreen() {
             const panel = document.body; 
             // 透過給 body 加 class 的方式將 #left-panel 固定為全螢幕
@@ -818,16 +876,80 @@
             });
         }
 
+        // =========================================
+        // 播放列表拖曳相關邏輯
+        // =========================================
+        let dragPlaylistSrcEl = null;
+
+        function handlePlaylistDragStart(e) {
+            dragPlaylistSrcEl = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.innerHTML);
+            this.classList.add('dragging');
+        }
+        function handlePlaylistDragOver(e) {
+            if (e.preventDefault) e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+        function handlePlaylistDragEnter(e) {
+            this.classList.add('drag-over');
+        }
+        function handlePlaylistDragLeave(e) {
+            this.classList.remove('drag-over');
+        }
+        function handlePlaylistDrop(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (dragPlaylistSrcEl !== this) {
+                const srcIndex = parseInt(dragPlaylistSrcEl.dataset.index);
+                const targetIndex = parseInt(this.dataset.index);
+                
+                // 陣列換位
+                const [movedItem] = playlist.splice(srcIndex, 1);
+                playlist.splice(targetIndex, 0, movedItem);
+
+                // 為了不讓音樂跳掉，自動修正目前播放 index 的位置
+                if (currentPlayIndex === srcIndex) {
+                    currentPlayIndex = targetIndex;
+                } else if (srcIndex < currentPlayIndex && targetIndex >= currentPlayIndex) {
+                    currentPlayIndex--;
+                } else if (srcIndex > currentPlayIndex && targetIndex <= currentPlayIndex) {
+                    currentPlayIndex++;
+                }
+
+                localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
+                syncPlaylistToSupabase();
+                renderPlaylist(); // 重新渲染列表
+            }
+            return false;
+        }
+        function handlePlaylistDragEnd(e) {
+            this.classList.remove('dragging');
+            document.querySelectorAll('#playlist-ul li').forEach(item => item.classList.remove('drag-over'));
+        }
+
         function renderPlaylist() {
             const ul = document.getElementById('playlist-ul');
             ul.innerHTML = '';
             playlist.forEach((song, index) => {
                 const li = document.createElement('li');
+                li.draggable = true;
+                li.dataset.index = index;
                 if (index === currentPlayIndex) li.classList.add('playing');
                 li.innerHTML = `
-                    <span onclick="playSong(${index})" style="flex:1;">${index + 1}. ${song.title}</span>
+                    <div class="drag-handle-playlist" title="按住拖曳">☰</div>
+                    <span onclick="playSong(${index})" style="flex:1; cursor:pointer;">${index + 1}. ${song.title}</span>
                     <button class="remove-btn" onclick="removeFromPlaylist(${index})" title="移除">✖</button>
                 `;
+                
+                // 綁定播放列表專屬拖曳事件
+                li.addEventListener('dragstart', handlePlaylistDragStart);
+                li.addEventListener('dragover', handlePlaylistDragOver);
+                li.addEventListener('dragenter', handlePlaylistDragEnter);
+                li.addEventListener('dragleave', handlePlaylistDragLeave);
+                li.addEventListener('drop', handlePlaylistDrop);
+                li.addEventListener('dragend', handlePlaylistDragEnd);
+
                 ul.appendChild(li);
             });
         }
@@ -848,6 +970,7 @@
             if (song) {
                 playlist.push(song);
                 localStorage.setItem('kalaok_playlist', JSON.stringify(playlist)); 
+                syncPlaylistToSupabase(); // 同步至雲端
                 renderPlaylist();
             }
         }
@@ -862,6 +985,7 @@
                 player = null; // 重置 player
             }
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
+            syncPlaylistToSupabase(); // 同步至雲端
             renderPlaylist();
             updateLyricsView();
         }
