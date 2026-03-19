@@ -14,14 +14,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 2. 核心步驟：使用 Linux 指令 (sed) 將標記替換成真正的 Secret
+      # 2. 核心步驟：將你的個人Secret注入 HTML (這裡維持用你的個人 Key)
       - name: Inject Secret into HTML
         run: |
           sed -i 's/__MY_SECRET_TOKEN__/${{ secrets.JOHSOK_KALAOK_KEY }}/g' index.html
 
-      # 3. 將替換完成的檔案發布到 GitHub Pages (會自動建立 gh-pages 分支)
+      # 3. 部署到 Pages (這裡必須使用內建的 GITHUB_TOKEN)
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}  # 使用 GitHub Token 進行認證
-          publish_dir: ./  # 發布整個資料夾的內容
+          # 👇⚠️ 請絕對確認這裡寫的是 GITHUB_TOKEN，不要改名
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+          publish_dir: ./
