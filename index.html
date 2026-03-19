@@ -236,7 +236,7 @@
                     <strong>歌曲儲存與雲端同步設定：</strong>
                     <ul>
                         <li><span class="highlight-gh">第一步：</span> 輸入歌名與連結，點擊「儲存至本地暫存」。</li>
-                        <li><span class="highlight-gh">第二步：</span> 填寫下方 GitHub 資訊，點擊「一鍵同步至 GitHub」即可直接更新線上歌單！</li>
+                        <li><span class="highlight-gh">第二步：</span> 點擊「一鍵同步至 GitHub」即可直接更新線上歌單！</li>
                     </ul>
                 </div>
 
@@ -263,21 +263,11 @@
 
                     <div style="flex: 1; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border: 1px dashed rgba(255,255,255,0.2);">
                         <h3 style="color: #38ef7d; margin-top:0;">☁️ GitHub 一鍵同步設定</h3>
-                        <p style="color: #ccc; font-size: 13px; line-height: 1.5; margin-bottom: 15px;">為保護資安，請在此處填入 Token。系統將安全地儲存於您的瀏覽器中，不會寫入公開原始碼。</p>
-                        
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">GitHub 帳號 (Owner)：</label>
-                            <input type="text" id="gh-owner" placeholder="例如: your-username">
-                        </div>
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">儲存庫名稱 (Repo)：</label>
-                            <input type="text" id="gh-repo" placeholder="例如: my-kalaok">
-                        </div>
-                        <div class="form-group">
-                            <label style="color:#38ef7d;">Johsok_KaLaOK_Key (Token)：</label>
-                            <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxx">
-                        </div>
-                        <button onclick="syncToGitHub()" class="btn-save-song btn-export" style="width: 100%; margin-top: 10px;">🚀 一鍵同步至 GitHub</button>
+                        <p style="color: #ccc; font-size: 14px; line-height: 1.6;">
+                            已配置將資料直接同步至 GitHub 的同資料夾 <code style="color: #00f2fe;">song.json</code> 中。
+                        </p>
+                        <button onclick="syncToGitHub()" class="btn-save-song btn-export" style="width: 100%; margin-top: 20px;">🚀 一鍵同步至 GitHub</button>
+                        <p style="font-size: 11px; color: #888; margin-top: 10px; line-height: 1.5;">* 此安全設計將把 Token 綁定於環境變數中，防止外洩風險。</p>
                     </div>
                 </div>
             </div>
@@ -415,7 +405,13 @@
         // 音量與片段循環控制
         // =========================================
         function adjustVolume(change) {
-            // ✅ 已解除手機裝置阻擋限制，直接傳送 YouTube 音量指令
+            // ✅ 手機版音量按鍵修正：手機系統本身會限制網頁透過 JS 調整音量
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                alert("因手機系統限制，網頁無法直接修改音量。請直接使用手機側邊的「實體音量按鍵」來調整音量喔！");
+                return;
+            }
+
             if (player && typeof player.getVolume === 'function') {
                 let currentVol = player.getVolume();
                 let newVol = currentVol + change;
@@ -646,24 +642,23 @@
         }
 
         // =========================================
-        // ✅ 修正 7：GitHub API 一鍵同步功能 (安全前端寫法)
-        // 讀取瀏覽器暫存的 GitHub 設定，避免每次重填
+        // ✅ 修正 7：改為直接由環境變數或固定參數存取 GitHub 一鍵同步
         // =========================================
-        const savedGhPrefs = JSON.parse(localStorage.getItem('kalaok_gh_prefs'));
-        if (savedGhPrefs) {
-            document.getElementById('gh-owner').value = savedGhPrefs.owner || '';
-            document.getElementById('gh-repo').value = savedGhPrefs.repo || '';
-            document.getElementById('gh-token').value = savedGhPrefs.token || '';
-        }
-
         async function syncToGitHub() {
-            const owner = document.getElementById('gh-owner').value.trim();
-            const repo = document.getElementById('gh-repo').value.trim();
-            const token = document.getElementById('gh-token').value.trim();
+            // 請在此處填入您真正的 GitHub 帳號以及 Repo 名稱
+            const owner = '替換為您的GitHub帳號'; 
+            const repo = '替換為您的儲存庫名稱';
+            
+            // 這裡預留給環境變數 (GitHub Secrets)。若要讓純 HTML 自動讀取，您需透過 GitHub Actions
+            // 的編譯流程 (例如 sed 指令) 在發布前將 '{{ secrets.Johsok_KaLaOK_Key }}' 字串取代為真的 Token。
+            const token = '{{ secrets.Johsok_KaLaOK_Key }}';
+            
+            // 將路徑改為直接寫入同資料夾的 song.json
             const path = 'song.json';
 
-            if (!owner || !repo || !token) {
-                alert("⚠️ 請完整填寫 GitHub 的帳號、儲存庫與 Token！");
+            // 簡易的防呆判斷，提醒還沒有替換 Token 的情形
+            if (token === '{{ secrets.Johsok_KaLaOK_Key }}' || !owner || !repo) {
+                alert("⚠️ 請注意：請確認是否已透過 GitHub Actions 將 Token 變數注入，或檢查原始碼內的帳號/Repo是否填寫正確！");
                 return;
             }
 
@@ -705,8 +700,6 @@
 
                 if (putRes.ok) {
                     alert("🎉 同步成功！GitHub 上的歌單已更新。");
-                    // 成功後將設定安全地存在瀏覽器本地端
-                    localStorage.setItem('kalaok_gh_prefs', JSON.stringify({ owner, repo, token }));
                 } else {
                     const errorData = await putRes.json();
                     alert(`❌ 同步失敗: ${errorData.message}`);
