@@ -23,5 +23,5 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.JOHSOK_KALAOK_KEY }}  # 使用 GitHub Token 進行認證
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # 使用 GitHub Token 進行認證
           publish_dir: ./  # 發布整個資料夾的內容
