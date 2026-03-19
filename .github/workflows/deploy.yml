@@ -1,0 +1,27 @@
+name: 自動注入 Token 並部署到 GitHub Pages
+
+# 觸發條件：當程式碼推送到 main 分支時執行 (若您的主分支叫 master 請自行更改)
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 讓機器人取得您的原始碼
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 2. 核心步驟：使用 Linux 指令 (sed) 將標記替換成真正的 Secret
+      - name: Inject Secret into HTML
+        run: |
+          sed -i 's/__MY_SECRET_TOKEN__/${{ secrets.JOHSOK_KALAOK_KEY }}/g' index.html
+
+      # 3. 將替換完成的檔案發布到 GitHub Pages (會自動建立 gh-pages 分支)
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./  # 發布整個資料夾的內容
