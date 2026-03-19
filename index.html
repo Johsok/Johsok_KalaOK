@@ -229,7 +229,7 @@
             <div id="view-edit" class="view-section">
                 <div class="edit-container" style="max-width: 600px; margin: 0 auto;">
                     <div class="save-status-info">
-                        <strong>點擊「儲存」將直接同步至 Supabase 雲端資料庫！</strong>
+                        <strong>點擊「儲存」將直接同步至 Supabase 雲端資料庫！<br>(未登入者會跳出密碼輸入視窗)</strong>
                     </div>
 
                     <h3 style="color: #4facfe; margin-top:0;">新增歌曲</h3>
@@ -316,10 +316,47 @@
         }
 
         // =========================================
+        // Supabase 身分驗證與權限控制
+        // =========================================
+        
+        // ⚠️ 這裡請改成你在 Supabase Authentication 設定的管理員信箱
+        const ADMIN_EMAIL = 'johsok2@yahoo.com.tw'; 
+
+        // 檢查使用者是否已經成功登入 (Session 是否存在)
+        async function checkLoginStatus() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            return session !== null;
+        }
+
+        // 管理員登入視窗：未登入時跳出提示要求輸入密碼
+        async function requireLogin() {
+            const isLoggedIn = await checkLoginStatus();
+            if (isLoggedIn) return true; // 已登入，直接放行，不需再輸入密碼
+
+            // 未登入，跳出原生的 prompt 視窗要求輸入密碼
+            const pwd = prompt("此操作需要管理員權限。\n請輸入密碼：");
+            if (!pwd) return false; // 使用者按下取消或未輸入密碼，中斷操作
+
+            // 向 Supabase 發送登入請求
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
+                email: ADMIN_EMAIL,
+                password: pwd
+            });
+
+            if (error) {
+                alert("❌ 密碼錯誤或登入失敗！\n" + error.message);
+                return false;
+            } else {
+                alert("✅ 登入成功！您現在可以新增與刪除歌曲了。");
+                return true;
+            }
+        }
+
+        // =========================================
         // Supabase 資料庫操作區塊
         // =========================================
 
-        // 讀取歌曲庫
+        // 讀取歌曲庫 (所有人皆可讀取，受 RLS 政策 1 保護)
         async function fetchSongsFromSupabase() {
             try {
                 const { data, error } = await supabaseClient
@@ -337,8 +374,12 @@
             }
         }
 
-        // 新增歌曲到 Supabase
+        // 新增歌曲到 Supabase (受 RLS 政策 2 保護)
         async function saveSong() {
+            // 執行新增前，先驗證身分！如果未授權則直接中斷函式
+            const isAuthorized = await requireLogin();
+            if (!isAuthorized) return; 
+
             const title = document.getElementById('edit-title').value.trim();
             const ytUrl = document.getElementById('edit-yt').value.trim();
             const lyrics = document.getElementById('edit-lyrics').value.trim();
@@ -370,12 +411,17 @@
                 
             } catch (err) {
                 console.error("儲存失敗:", err);
-                alert(`❌ 儲存至 Supabase 發生錯誤：\n${err.message}\n(請確認表名是否為 songs，且已關閉 RLS)`);
+                alert(`❌ 儲存至 Supabase 發生錯誤：\n${err.message}\n(請確認是否已通過權限驗證)`);
             }
         }
 
-        // 從 Supabase 刪除歌曲
+        // 從 Supabase 刪除歌曲 (受 RLS 政策 3 保護)
         async function deleteSong(songId) {
+            // 執行刪除前，先驗證身分！如果未授權則直接中斷函式
+            const isAuthorized = await requireLogin();
+            if (!isAuthorized) return;
+
+            // 身分驗證通過後，再做最終刪除確認
             if (!confirm("確定要從雲端資料庫中永久刪除這首歌嗎？")) return;
             
             try {
@@ -389,6 +435,7 @@
                 // 成功後從本地陣列中剔除並重新渲染
                 songs = songs.filter(s => s.id !== songId);
                 renderSongGrid();
+                alert("🗑️ 歌曲已從雲端刪除。");
             } catch (err) {
                 console.error("刪除失敗:", err);
                 alert(`❌ 刪除發生錯誤：\n${err.message}`);
