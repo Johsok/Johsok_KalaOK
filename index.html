@@ -76,7 +76,7 @@
         .song-card:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.05); border-color: rgba(79, 172, 254, 0.5); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         .song-card strong { margin-bottom: 5px; color: #fff; font-size: 14px; word-break: break-all; }
         
-        /* ✅ 歌曲庫按鈕區：加入與刪除按鈕排版 */
+        /* 歌曲庫按鈕區：加入與刪除按鈕排版 */
         .card-btn-group { display: flex; gap: 10px; margin-top: 10px; }
         
         .add-to-playlist-btn {
@@ -87,7 +87,7 @@
         .add-to-playlist-btn:hover { background: #00f2fe; color: #000; box-shadow: 0 0 10px #00f2fe; transform: scale(1.1); }
         .add-to-playlist-btn::before { content: '+'; margin-top: -2px; }
 
-        /* ✅ 新增：歌曲庫刪除按鈕樣式 */
+        /* 歌曲庫刪除按鈕樣式 */
         .delete-song-btn {
             width: 35px; height: 35px; flex-shrink: 0;
             background: rgba(255,75,43,0.1); color: #ff4b2b; border: none; border-radius: 50%;
@@ -232,7 +232,7 @@
             <div id="view-edit" class="view-section">
                 <div class="edit-container" style="max-width: 600px; margin: 0 auto;">
                     <div class="save-status-info">
-                        <strong>點擊「儲存」將同時儲存至本地並自動同步至 GitHub 雲端！</strong>
+                        <strong>點擊「儲存」將保存在瀏覽器本地！若需備份實體檔案，請點擊「下載 JSON」。</strong>
                     </div>
 
                     <h3 style="color: #4facfe; margin-top:0;">新增/編輯歌曲</h3>
@@ -249,8 +249,8 @@
                         <textarea id="edit-lyrics" placeholder="貼上歌詞..."></textarea>
                     </div>
                     <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button onclick="saveAndSyncSong()" class="btn-save-song" style="flex: 1; text-align: center;">儲存</button>
-                        <button onclick="exportJson()" class="btn-save-song" style="background: rgba(255,255,255,0.1); color:#ccc; box-shadow:none;">手動下載 JSON</button>
+                        <button onclick="saveSong()" class="btn-save-song" style="flex: 1; text-align: center;">儲存至本地</button>
+                        <button onclick="exportJson()" class="btn-save-song" style="background: rgba(255,255,255,0.1); color:#ccc; box-shadow:none;">下載 JSON</button>
                     </div>
                 </div>
             </div>
@@ -289,9 +289,8 @@
         let loopEnd = null;
         let loopInterval = null;
 
-        // ✅ 修正 2：偵測 iOS 設備，因 iOS Safari 限制使用 JS 調整影片音量，故自動將音量按鈕隱藏
+        // 偵測 iOS 設備，因 iOS Safari 限制使用 JS 調整影片音量，故自動將音量按鈕隱藏
         document.addEventListener("DOMContentLoaded", () => {
-            // 透過 userAgent 或 touch 事件判斷是否為 iOS 裝置 (包含 iPadOS)
             const isIOS = [
                 'iPad Simulator', 'iPhone Simulator', 'iPod Simulator',
                 'iPad', 'iPhone', 'iPod'
@@ -299,7 +298,6 @@
             (navigator.userAgent.includes("Mac") && "ontouchend" in document); 
             
             if (isIOS) {
-                // 如果是 iOS，選取所有音量按鈕並隱藏
                 document.querySelectorAll('.btn-vol').forEach(btn => {
                     btn.style.display = 'none';
                 });
@@ -520,7 +518,6 @@
             if (viewName === 'songs') renderSongGrid();
         }
 
-        // ✅ 修正：歌曲庫渲染時，加入獨立的「刪除按鈕」
         function renderSongGrid() {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
@@ -585,21 +582,18 @@
             updateLyricsView();
         }
 
-        // ✅ 新增：刪除歌曲並同步 GitHub 的功能
-        async function deleteSong(songId) {
-            if (!confirm("確定要從歌曲庫中刪除這首歌嗎？\n(這將同步刪除 GitHub 上的記錄)")) return;
+        // 純刪除本地歌曲
+        function deleteSong(songId) {
+            if (!confirm("確定要從歌曲庫中刪除這首歌嗎？")) return;
             
             // 從陣列中剔除
             songs = songs.filter(s => s.id !== songId);
             saveToStorage();
             renderSongGrid();
-            
-            // 呼叫同步
-            await syncToGitHub("刪除歌曲同步");
         }
 
-        // ✅ 修改：合併「儲存」與「同步」為單一動作
-        async function saveAndSyncSong() {
+        // 純儲存至本地 (拔除 GitHub 同步)
+        function saveSong() {
             const title = document.getElementById('edit-title').value.trim();
             const ytUrl = document.getElementById('edit-yt').value.trim();
             const lyrics = document.getElementById('edit-lyrics').value.trim();
@@ -616,10 +610,8 @@
             document.getElementById('edit-yt').value = '';
             document.getElementById('edit-lyrics').value = '';
             
+            alert("🎉 歌曲已成功儲存至本地瀏覽器！");
             switchView('songs'); 
-            
-            // 呼叫底層同步
-            await syncToGitHub("新增歌曲同步");
         }
 
         function saveToStorage() {
@@ -627,6 +619,7 @@
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
         }
 
+        // 保留原有的手動下載 json 功能
         function exportJson() {
             if(songs.length === 0) { alert("沒有歌曲可以匯出喔！"); return; }
             const dataStr = JSON.stringify(songs, null, 4);
@@ -636,77 +629,6 @@
             a.href = url; a.download = "song.json"; 
             document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 0);
-        }
-
-        // =========================================
-        // ✅ 修正：直接將參數寫死於底層程式碼中
-        // =========================================
-        async function syncToGitHub(actionMessage = "Auto-sync song.json") {
-            // 根據您的需求，直接定義常數
-            const owner = 'Johsok';
-            const repo = 'Johsok_KalaOK';
-            
-            // ⚠️ 重要：請把下方的字串替換為您真正的 Token
-            const token = '__MY_SECRET_TOKEN__'; 
-            
-            const path = 'song.json';
-
-            // ✅ 修正 1：增加了對 '__MY_SECRET_TOKEN__' 以及空值的判斷
-            // 避免在本地端測試或 GitHub Action 未正確替換 Token 時，對 API 發出錯誤請求導致 401/403 報錯
-            if (token === '__MY_SECRET_TOKEN__' || token === '請在此貼上您的真實Token' || !token) {
-                console.warn("未偵測到真實的 GitHub Token，變更已儲存於本地端，但未能同步至 GitHub。");
-                alert("✅ 歌曲已儲存至本地。\n\n⚠️ 提示：原始碼中的 Token 尚未替換，目前無法同步至 GitHub！");
-                return; // 提早結束，不再繼續發送 API 請求
-            }
-
-            try {
-                // 1. 取得 GitHub 上舊檔案的 SHA 值
-                const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-                const getRes = await fetch(getUrl, { 
-                    headers: { 'Authorization': `token ${token}` } 
-                });
-                
-                let sha = null;
-                if (getRes.ok) {
-                    const getData = await getRes.json();
-                    sha = getData.sha;
-                } else if (getRes.status !== 404) {
-                    // ✅ 修正 1：若狀態碼不是 404(找不到檔案)，取得具體報錯文字方便排錯
-                    const errorText = await getRes.text();
-                    throw new Error(`狀態碼: ${getRes.status}。\n原因可能是 Token 無效或缺乏權限。\n詳細資訊: ${errorText}`);
-                }
-
-                // 2. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
-                const contentStr = JSON.stringify(songs, null, 4);
-                const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
-
-                // 3. 透過 PUT 請求更新檔案
-                const putRes = await fetch(getUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: actionMessage,
-                        content: base64Content,
-                        sha: sha 
-                    })
-                });
-
-                if (putRes.ok) {
-                    // 若是刪除動作，這裡可以改為不同的提示
-                    alert(actionMessage.includes("刪除") ? "🗑️ 歌曲已刪除並完成 GitHub 同步！" : "🎉 儲存成功！已連動更新至 GitHub。");
-                } else {
-                    const errorData = await putRes.json();
-                    throw new Error(errorData.message);
-                }
-
-            } catch(e) {
-                console.error(e);
-                // ✅ 修正 1：將錯誤拋出並顯示完整原因，不再只提示「發生錯誤」
-                alert(`❌ 同步發生錯誤：\n${e.message}\n\n請檢查 GitHub 設定或按 F12 檢視控制台資訊。`);
-            }
         }
 
         renderPlaylist();
