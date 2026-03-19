@@ -171,6 +171,14 @@
         .save-status-info { background: rgba(0, 0, 0, 0.4); border-left: 4px solid #4facfe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
         .save-status-info strong { color: #fff; font-size: 16px; }
 
+        /* 新增：重設 Token 按鈕樣式 */
+        .btn-reset-token {
+            background: rgba(255, 75, 43, 0.15); border: 1px solid #ff4b2b; color: #ff4b2b; 
+            border-radius: 4px; padding: 4px 10px; cursor: pointer; margin-left: 10px; font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        .btn-reset-token:hover { background: #ff4b2b; color: #fff; }
+
         /* RWD 響應式設計 (手機與平板完美適配) */
         @media (max-width: 900px) {
             body { height: auto; overflow: auto; padding: 10px; }
@@ -232,7 +240,9 @@
             <div id="view-edit" class="view-section">
                 <div class="edit-container" style="max-width: 600px; margin: 0 auto;">
                     <div class="save-status-info">
-                        <strong>點擊「儲存」將同時儲存至本地並自動同步至 GitHub 雲端！</strong>
+                        <strong>點擊「儲存」將同時儲存至本地並自動同步至 GitHub 雲端！</strong><br>
+                        <span style="font-size: 12px; color: #aaa;">(首次儲存時會要求您輸入 GitHub Token，並安全記憶於此瀏覽器中)</span>
+                        <button onclick="resetGitHubToken()" class="btn-reset-token" title="清除瀏覽器記憶的 Token">重設 Token</button>
                     </div>
 
                     <h3 style="color: #4facfe; margin-top:0;">新增/編輯歌曲</h3>
@@ -639,28 +649,43 @@
         }
 
         // =========================================
-        // ✅ 修正：直接將參數寫死於底層程式碼中
+        // ✅ 全新安全機制：手動重設/清除 Token
+        // =========================================
+        function resetGitHubToken() {
+            if(confirm("確定要清除瀏覽器中記憶的 GitHub Token 嗎？\n下次儲存或刪除歌曲時，系統將會重新要求您輸入。")) {
+                localStorage.removeItem('github_kalaok_token');
+                alert("✅ Token 已成功清除！");
+            }
+        }
+
+        // =========================================
+        // ✅ 全新架構：使用 LocalStorage 安全彈窗記憶 Token
         // =========================================
         async function syncToGitHub(actionMessage = "Auto-sync song.json") {
-            // 根據您的需求，直接定義常數
             const owner = 'Johsok';
             const repo = 'Johsok_KalaOK';
-            
-            // ⚠️ 重要：請把下方的字串替換為您真正的 Token
-            const token = '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'; 
-            
             const path = 'song.json';
 
-            // ✅ 修正 1：增加了對 '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' 以及空值的判斷
-            // 避免在本地端測試或 GitHub Action 未正確替換 Token 時，對 API 發出錯誤請求導致 401/403 報錯
-            if (token === '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' || token === '請在此貼上您的真實Token' || !token) {
-                console.warn("未偵測到真實的 GitHub Token，變更已儲存於本地端，但未能同步至 GitHub。");
-                alert("✅ 歌曲已儲存至本地。\n\n⚠️ 提示：原始碼中的 Token 尚未替換，目前無法同步至 GitHub！");
-                return; // 提早結束，不再繼續發送 API 請求
+            // 1. 從瀏覽器 LocalStorage 中嘗試取得 Token
+            let token = localStorage.getItem('github_kalaok_token');
+            
+            // 2. 如果沒有記憶 Token，則彈出視窗要求使用者輸入
+            if (!token) {
+                token = prompt("請輸入您的 GitHub Token (Fine-grained PAT)：\n\n💡 這串密碼只會安全地記憶在您現在使用的瀏覽器中，不會寫入原始碼。");
+                
+                // 如果使用者按取消或沒輸入
+                if (!token || token.trim() === '') {
+                    alert("✅ 歌曲已成功儲存至本機。\n\n⚠️ 提示：因未輸入 Token，本次操作無法同步至 GitHub。");
+                    return; 
+                }
+                
+                // 儲存至瀏覽器
+                token = token.trim();
+                localStorage.setItem('github_kalaok_token', token);
             }
 
             try {
-                // 1. 取得 GitHub 上舊檔案的 SHA 值
+                // 3. 取得 GitHub 上舊檔案的 SHA 值
                 const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
                 const getRes = await fetch(getUrl, { 
                     headers: { 'Authorization': `token ${token}` } 
@@ -670,17 +695,19 @@
                 if (getRes.ok) {
                     const getData = await getRes.json();
                     sha = getData.sha;
+                } else if (getRes.status === 401 || getRes.status === 403) {
+                    // 偵測到身分驗證錯誤 (Token 錯誤或過期)
+                    throw new Error(`401_UNAUTHORIZED`);
                 } else if (getRes.status !== 404) {
-                    // ✅ 修正 1：若狀態碼不是 404(找不到檔案)，取得具體報錯文字方便排錯
                     const errorText = await getRes.text();
-                    throw new Error(`狀態碼: ${getRes.status}。\n原因可能是 Token 無效或缺乏權限。\n詳細資訊: ${errorText}`);
+                    throw new Error(`無法取得舊檔案資訊，狀態碼: ${getRes.status}。詳細: ${errorText}`);
                 }
 
-                // 2. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
+                // 4. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
                 const contentStr = JSON.stringify(songs, null, 4);
                 const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
 
-                // 3. 透過 PUT 請求更新檔案
+                // 5. 透過 PUT 請求更新檔案
                 const putRes = await fetch(getUrl, {
                     method: 'PUT',
                     headers: {
@@ -695,17 +722,22 @@
                 });
 
                 if (putRes.ok) {
-                    // 若是刪除動作，這裡可以改為不同的提示
-                    alert(actionMessage.includes("刪除") ? "🗑️ 歌曲已刪除並完成 GitHub 同步！" : "🎉 儲存成功！已連動更新至 GitHub。");
+                    alert(actionMessage.includes("刪除") ? "🗑️ 歌曲已刪除並完成 GitHub 同步！" : "🎉 儲存成功！已連動更新至 GitHub 雲端。");
                 } else {
+                    if (putRes.status === 401 || putRes.status === 403) throw new Error(`401_UNAUTHORIZED`);
                     const errorData = await putRes.json();
                     throw new Error(errorData.message);
                 }
 
             } catch(e) {
                 console.error(e);
-                // ✅ 修正 1：將錯誤拋出並顯示完整原因，不再只提示「發生錯誤」
-                alert(`❌ 同步發生錯誤：\n${e.message}\n\n請檢查 GitHub 設定或按 F12 檢視控制台資訊。`);
+                // 如果是 Token 失效的錯誤，自動清除 localStorage 並提醒使用者
+                if (e.message.includes("401_UNAUTHORIZED")) {
+                    localStorage.removeItem('github_kalaok_token');
+                    alert("❌ GitHub Token 驗證失敗！\n您的 Token 可能輸入錯誤、權限不足，或是已經過期。\n\n系統已自動清除舊密碼，請下次重新輸入。");
+                } else {
+                    alert(`❌ 同步發生錯誤：\n${e.message}\n\n請檢查 F12 控制台資訊。`);
+                }
             }
         }
 
