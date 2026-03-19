@@ -647,13 +647,13 @@
             const repo = 'Johsok_KalaOK';
             
             // ⚠️ 重要：請把下方的字串替換為您真正的 Token
-            const token = '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'; 
+            const token = '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'; 
             
             const path = 'song.json';
 
-            // ✅ 修正 1：增加了對 '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' 以及空值的判斷
+            // ✅ 修正 1：增加了對 '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' 以及空值的判斷
             // 避免在本地端測試或 GitHub Action 未正確替換 Token 時，對 API 發出錯誤請求導致 401/403 報錯
-            if (token === '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' || token === '請在此貼上您的真實Token' || !token) {
+            if (token === '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' || token === '請在此貼上您的真實Token' || !token) {
                 console.warn("未偵測到真實的 GitHub Token，變更已儲存於本地端，但未能同步至 GitHub。");
                 alert("✅ 歌曲已儲存至本地。\n\n⚠️ 提示：原始碼中的 Token 尚未替換，目前無法同步至 GitHub！");
                 return; // 提早結束，不再繼續發送 API 請求
