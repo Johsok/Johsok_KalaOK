@@ -289,6 +289,24 @@
         let loopEnd = null;
         let loopInterval = null;
 
+        // ✅ 修正 2：偵測 iOS 設備，因 iOS Safari 限制使用 JS 調整影片音量，故自動將音量按鈕隱藏
+        document.addEventListener("DOMContentLoaded", () => {
+            // 透過 userAgent 或 touch 事件判斷是否為 iOS 裝置 (包含 iPadOS)
+            const isIOS = [
+                'iPad Simulator', 'iPhone Simulator', 'iPod Simulator',
+                'iPad', 'iPhone', 'iPod'
+            ].includes(navigator.platform) || 
+            (navigator.userAgent.includes("Mac") && "ontouchend" in document); 
+            
+            if (isIOS) {
+                // 如果是 iOS，選取所有音量按鈕並隱藏
+                document.querySelectorAll('.btn-vol').forEach(btn => {
+                    btn.style.display = 'none';
+                });
+                console.log("偵測到 iOS 設備，已隱藏音量控制按鈕。");
+            }
+        });
+
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
         }
@@ -633,11 +651,12 @@
             
             const path = 'song.json';
 
-            // 若尚未填寫 Token 則不執行 API 請求，僅於本地暫存
-            if (token === '請在此貼上您的真實Token' || !token) {
+            // ✅ 修正 1：增加了對 '__MY_SECRET_TOKEN__' 以及空值的判斷
+            // 避免在本地端測試或 GitHub Action 未正確替換 Token 時，對 API 發出錯誤請求導致 401/403 報錯
+            if (token === '__MY_SECRET_TOKEN__' || token === '請在此貼上您的真實Token' || !token) {
                 console.warn("未偵測到真實的 GitHub Token，變更已儲存於本地端，但未能同步至 GitHub。");
                 alert("✅ 歌曲已儲存至本地。\n\n⚠️ 提示：原始碼中的 Token 尚未替換，目前無法同步至 GitHub！");
-                return;
+                return; // 提早結束，不再繼續發送 API 請求
             }
 
             try {
@@ -652,7 +671,9 @@
                     const getData = await getRes.json();
                     sha = getData.sha;
                 } else if (getRes.status !== 404) {
-                    throw new Error("無法取得舊檔案資訊，請檢查設定與 Token 權限。");
+                    // ✅ 修正 1：若狀態碼不是 404(找不到檔案)，取得具體報錯文字方便排錯
+                    const errorText = await getRes.text();
+                    throw new Error(`狀態碼: ${getRes.status}。\n原因可能是 Token 無效或缺乏權限。\n詳細資訊: ${errorText}`);
                 }
 
                 // 2. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
@@ -678,12 +699,13 @@
                     alert(actionMessage.includes("刪除") ? "🗑️ 歌曲已刪除並完成 GitHub 同步！" : "🎉 儲存成功！已連動更新至 GitHub。");
                 } else {
                     const errorData = await putRes.json();
-                    alert(`❌ 同步失敗: ${errorData.message}`);
+                    throw new Error(errorData.message);
                 }
 
             } catch(e) {
                 console.error(e);
-                alert("發生錯誤，請檢查 F12 控制台資訊。");
+                // ✅ 修正 1：將錯誤拋出並顯示完整原因，不再只提示「發生錯誤」
+                alert(`❌ 同步發生錯誤：\n${e.message}\n\n請檢查 GitHub 設定或按 F12 檢視控制台資訊。`);
             }
         }
 
