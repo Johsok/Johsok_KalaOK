@@ -61,7 +61,7 @@
         .view-section { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 25px;
             visibility: hidden; opacity: 0; z-index: 0; pointer-events: none;
-            overflow-y: auto; transform: scale(0.98); transition: opacity 0.3s ease, transform 0.3s ease; /* 改在這裡控制動畫 */
+            overflow-y: auto; transform: scale(0.98); transition: opacity 0.3s ease, transform 0.3s ease;
         }
         .view-section.active { 
             visibility: visible; opacity: 1; z-index: 1; pointer-events: auto; transform: scale(1);
@@ -112,8 +112,6 @@
 
         #view-youtube { padding: 0; }
         #youtube-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #000; position: relative; }
-        
-        /* 讓強制寫入的 iframe 可以漂亮地滿版 */
         .fallback-iframe { width: 100%; height: 100%; border: none; }
 
         #right-panel { 
@@ -123,24 +121,35 @@
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); overflow: hidden;
         }
         
-        .controls { display: flex; padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); gap: 15px; justify-content: space-around; background: rgba(0,0,0,0.2); }
+        /* ✅ 修正 4：優化右側控制面板的排版，包容音量與循環按鈕 */
+        .controls-wrapper { display: flex; flex-direction: column; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .controls { display: flex; padding: 15px 15px 5px 15px; gap: 10px; justify-content: space-around; }
+        .loop-controls { padding: 5px 15px 15px 15px; border-top: 1px dashed rgba(255,255,255,0.05); }
         
         .btn-control { 
-            width: 80px; height: 55px; 
-            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; 
+            width: 75px; height: 50px; 
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; 
             display: inline-flex; justify-content: center; align-items: center; 
             cursor: pointer; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
         .btn-control:hover { background: rgba(255, 255, 255, 0.15); border-color: #4facfe; box-shadow: 0 0 15px rgba(79, 172, 254, 0.4); transform: translateY(-2px); }
 
-        .icon-rewind::before, .icon-rewind::after { content: ''; display: block; border-style: solid; border-width: 12px 16px 12px 0; border-color: transparent #fff transparent transparent; position: absolute; top: 50%; transform: translateY(-50%); }
-        .icon-rewind::before { left: 20px; } .icon-rewind::after { left: 30px; }
+        /* 音量按鈕樣式 */
+        .btn-vol { font-size: 18px; color: #fff; font-weight: bold; }
+        
+        /* 循環按鈕樣式 */
+        .btn-loop { flex-direction: column; font-size: 14px; color: #fff; }
+        .btn-loop span { font-size: 11px; color: #4facfe; margin-top: 2px; font-family: monospace; letter-spacing: 1px;}
+        .btn-loop.active { border-color: #38ef7d; background: rgba(56, 239, 125, 0.1); box-shadow: 0 0 10px rgba(56, 239, 125, 0.3); }
 
-        .icon-fastforward::before, .icon-fastforward::after { content: ''; display: block; border-style: solid; border-width: 12px 0 12px 16px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%); }
-        .icon-fastforward::before { left: 22px; } .icon-fastforward::after { left: 32px; }
+        .icon-rewind::before, .icon-rewind::after { content: ''; display: block; border-style: solid; border-width: 10px 14px 10px 0; border-color: transparent #fff transparent transparent; position: absolute; top: 50%; transform: translateY(-50%); }
+        .icon-rewind::before { left: 18px; } .icon-rewind::after { left: 28px; }
 
-        .icon-next::before { content: ''; display: block; border-style: solid; border-width: 12px 0 12px 16px; border-color: transparent transparent transparent #fff; margin-right: 6px; }
-        .icon-next::after { content: ''; display: block; width: 4px; height: 24px; background-color: #fff; border-radius: 2px; }
+        .icon-fastforward::before, .icon-fastforward::after { content: ''; display: block; border-style: solid; border-width: 10px 0 10px 14px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%); }
+        .icon-fastforward::before { left: 20px; } .icon-fastforward::after { left: 30px; }
+
+        .icon-next::before { content: ''; display: block; border-style: solid; border-width: 10px 0 10px 14px; border-color: transparent transparent transparent #fff; margin-right: 6px; }
+        .icon-next::after { content: ''; display: block; width: 4px; height: 20px; background-color: #fff; border-radius: 2px; }
 
         .playlist-area { padding: 20px; flex: 1; overflow-y: auto; }
         .playlist-area h3 { margin-top: 0; color: #4facfe; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
@@ -170,7 +179,6 @@
         <div class="toolbar">
             <button onclick="switchView('songs')" class="active">歌曲列表</button>
             <button onclick="switchView('lyrics')">歌詞</button>
-            <button onclick="switchView('youtube')">顯示Youtube影像</button>
             <button onclick="switchView('edit')">新增與編輯</button>
         </div>
     </header>
@@ -223,10 +231,19 @@
         </div>
 
         <div id="right-panel">
-            <div class="controls">
-                <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
-                <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
-                <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
+            <div class="controls-wrapper">
+                <div class="controls">
+                    <button class="btn-control btn-vol" onclick="adjustVolume(-10)" title="音量減小">➖</button>
+                    <button class="btn-control btn-vol" onclick="adjustVolume(10)" title="音量增大">➕</button>
+                    <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
+                    <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
+                    <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
+                </div>
+                <div class="controls loop-controls">
+                    <button class="btn-control btn-loop" id="btn-loop-start" onclick="setLoopStart()" title="設定循環起點">開始<br><span>--:--</span></button>
+                    <button class="btn-control btn-loop" id="btn-loop-end" onclick="setLoopEnd()" title="設定循環終點">結束<br><span>--:--</span></button>
+                    <button class="btn-control btn-loop" onclick="clearLoop()" title="清除循環設定">✖<br><span>清除</span></button>
+                </div>
             </div>
             <div class="playlist-area">
                 <h3>播放列表</h3>
@@ -241,6 +258,11 @@
         let playlist = JSON.parse(localStorage.getItem('kalaok_playlist')) || [];
         let currentPlayIndex = -1;
         let player = null;
+
+        // ✅ 新增：片段循環所需的全域變數
+        let loopStart = null;
+        let loopEnd = null;
+        let loopInterval = null;
 
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
@@ -279,7 +301,6 @@
             .catch(error => {
                 songs = JSON.parse(localStorage.getItem('kalaok_songs')) || [];
                 if(songs.length === 0) {
-                    // 🚨 修正 2：更換為 100% 絕對不會鎖「外網內嵌」的 NCS 音樂測試檔
                     songs.push({
                         id: Date.now(),
                         title: "測試音樂 - NCS 無版權電音",
@@ -292,27 +313,27 @@
             });
 
         // =========================================
-        // 🚨 修正 3：防彈級的 iframe 強制注入法
-        // 不再依賴不穩定的 new YT.Player() 來生成 iframe
+        // 防彈級的 iframe 強制注入法
         // =========================================
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
             currentPlayIndex = index;
             const song = playlist[index];
             
-            // 確保切換到視圖
+            // 確保切換到視圖 (自動切換)
             switchView('youtube'); 
             
+            // 換歌時清除上一首的循環設定
+            clearLoop();
+
             if (!song.ytId || song.ytId.length !== 11) {
                 alert("無效的 Youtube ID，請編輯該歌曲！");
                 switchView('songs'); return;
             }
 
             const container = document.getElementById('youtube-container');
-            const origin = window.location.origin; // 自動抓取 Localhost 網址
+            const origin = window.location.origin; 
 
-            // 1. 直接用 HTML 暴力寫入 iframe，避開所有 API 尺寸計算的 Bug
-            // 加上 origin 參數防止 Live Server 被擋，並開啟 autoplay
             container.innerHTML = `
                 <iframe id="yt-iframe" class="fallback-iframe"
                     src="https://www.youtube.com/embed/${song.ytId}?autoplay=1&enablejsapi=1&origin=${origin}&rel=0" 
@@ -323,14 +344,11 @@
                 </iframe>
             `;
 
-            // 2. 延遲 300 毫秒，等 iframe 在畫面上長出來後，才把 API 綁上去
-            // 這樣不但保證影片 100% 顯示，還能同時擁有「快轉」與「播完換下一首」的功能
             setTimeout(() => {
                 if (typeof YT !== 'undefined' && YT.Player) {
                     player = new YT.Player('yt-iframe', {
                         events: {
                             'onStateChange': (event) => {
-                                // 當影片狀態變成 0 (ENDED 結束) 時，播放下一首
                                 if (event.data === YT.PlayerState.ENDED) playNext();
                             }
                         }
@@ -340,6 +358,78 @@
             
             renderPlaylist();
             updateLyricsView();
+        }
+
+        // =========================================
+        // ✅ 修正 7：音量控制功能
+        // =========================================
+        function adjustVolume(change) {
+            if (player && typeof player.getVolume === 'function') {
+                let currentVol = player.getVolume();
+                let newVol = currentVol + change;
+                if (newVol > 100) newVol = 100;
+                if (newVol < 0) newVol = 0;
+                player.setVolume(newVol);
+            } else {
+                console.log("播放器尚未完全載入，無法調整音量");
+            }
+        }
+
+        // =========================================
+        // ✅ 修正 8：片段循環 (A-B Loop) 核心邏輯
+        // =========================================
+        function formatTime(seconds) {
+            if (seconds === null || seconds === undefined) return "--:--";
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        function setLoopStart() {
+            if (player && typeof player.getCurrentTime === 'function') {
+                loopStart = player.getCurrentTime();
+                document.getElementById('btn-loop-start').innerHTML = `開始<br><span>${formatTime(loopStart)}</span>`;
+                document.getElementById('btn-loop-start').classList.add('active');
+                checkLoopStatus();
+            }
+        }
+
+        function setLoopEnd() {
+            if (player && typeof player.getCurrentTime === 'function') {
+                let currentTime = player.getCurrentTime();
+                if (loopStart !== null && currentTime <= loopStart) {
+                    alert("結束時間必須晚於開始時間喔！");
+                    return;
+                }
+                loopEnd = currentTime;
+                document.getElementById('btn-loop-end').innerHTML = `結束<br><span>${formatTime(loopEnd)}</span>`;
+                document.getElementById('btn-loop-end').classList.add('active');
+                checkLoopStatus();
+            }
+        }
+
+        function clearLoop() {
+            loopStart = null;
+            loopEnd = null;
+            if (loopInterval) clearInterval(loopInterval);
+            document.getElementById('btn-loop-start').innerHTML = `開始<br><span>--:--</span>`;
+            document.getElementById('btn-loop-end').innerHTML = `結束<br><span>--:--</span>`;
+            document.getElementById('btn-loop-start').classList.remove('active');
+            document.getElementById('btn-loop-end').classList.remove('active');
+        }
+
+        function checkLoopStatus() {
+            if (loopInterval) clearInterval(loopInterval);
+            if (loopStart !== null && loopEnd !== null) {
+                // 每 200 毫秒檢查一次影片進度
+                loopInterval = setInterval(() => {
+                    if (player && typeof player.getCurrentTime === 'function') {
+                        if (player.getCurrentTime() >= loopEnd) {
+                            player.seekTo(loopStart, true);
+                        }
+                    }
+                }, 200);
+            }
         }
 
         // 快轉與回放核心機制
@@ -361,9 +451,17 @@
 
         function switchView(viewName) {
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            document.getElementById(`view-${viewName}`).classList.add('active');
+            
+            // 處理切換到 youtube 視圖
+            if (viewName === 'youtube') {
+                document.getElementById('view-youtube').classList.add('active');
+            } else {
+                const targetView = document.getElementById(`view-${viewName}`);
+                if (targetView) targetView.classList.add('active');
+            }
             
             document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('active'));
+            // 尋找對應的按鈕並加上 active，因為砍掉了 youtube 按鈕，這裡只對現存的按鈕做處理
             const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(viewName === 'edit' ? '新增與編輯' : viewName));
             if(activeBtn) activeBtn.classList.add('active');
 
