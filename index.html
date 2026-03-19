@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>傑斯克的練歌世界 Johsok's  KaLa  OK</title>
+    <title>傑斯克的練歌世界 Johsok's  Karaoke</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         /* =========================================
-           極致精美版：全域基礎重置與排版 
-           ========================================= */
+            極致精美版：全域基礎重置與排版 
+            ========================================= */
         * { box-sizing: border-box; font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
         button, .song-card, #playlist-ul li, .add-to-playlist-btn { transition: all 0.3s ease; }
 
@@ -54,7 +54,40 @@
             background: rgba(20, 30, 40, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
         }
+
+        /* 全螢幕模式的 CSS */
+        .fullscreen-active #left-panel {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            border-radius: 0 !important;
+            background: #000 !important;
+        }
+
+        #btn-exit-fs {
+            display: none;
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 10000;
+            padding: 10px 20px;
+            background: rgba(255, 75, 43, 0.8);
+            color: #fff;
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transition: all 0.2s;
+        }
+        #btn-exit-fs:hover { background: #ff4b2b; transform: scale(1.05); }
+        .fullscreen-active #btn-exit-fs { display: block; } /* 全螢幕時才顯示回上頁按鈕 */
         
         .view-section { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 25px;
@@ -109,6 +142,18 @@
         }
         .btn-save-song:hover { box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6); transform: translateY(-2px); }
         
+        /* 拖曳排序列表 CSS */
+        .sortable-list { list-style: none; padding: 0; margin: 0; }
+        .sortable-item { 
+            display: flex; align-items: center; padding: 10px; margin-bottom: 8px;
+            background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .sortable-item.dragging { opacity: 0.8; background: rgba(79, 172, 254, 0.5); border-color: #00f2fe; }
+        .sortable-item.drag-over { border: 2px dashed #00f2fe; }
+        .drag-handle { cursor: grab; padding: 0 15px 0 5px; font-size: 18px; color: #aaa; }
+        .drag-handle:active { cursor: grabbing; }
+
         #lyrics-content { 
             white-space: pre-wrap; font-size: 20px; line-height: 2; text-align: center; 
             color: #fff; background: rgba(0,0,0,0.3); padding: 30px; border-radius: 12px;
@@ -150,8 +195,11 @@
         .icon-fastforward::before, .icon-fastforward::after { content: ''; display: block; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; position: absolute; top: 50%; transform: translateY(-50%); }
         .icon-fastforward::before { left: 50%; margin-left: -10px; } .icon-fastforward::after { left: 50%; margin-left: 0px; }
 
-        .icon-next::before { content: ''; display: block; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; margin-right: 4px; }
-        .icon-next::after { content: ''; display: block; width: 3px; height: 16px; background-color: #fff; border-radius: 2px; }
+        /* 修改：全新的全螢幕 Icon (取代原來的下一首) */
+        .icon-fullscreen::before {
+            content: ''; display: block; width: 14px; height: 14px;
+            border: 2px solid #fff; border-radius: 2px; transition: all 0.2s;
+        }
 
         .playlist-area { padding: 15px; flex: 1; overflow-y: auto; }
         .playlist-area h3 { margin-top: 0; color: #4facfe; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; font-size: 16px; }
@@ -199,7 +247,7 @@
     <header>
         <div class="title-area">
             <h1>傑．斯．克 的 練 歌 世 界</h1>
-            <h2>Johsok’s  KaLa  OK</h2>
+            <h2>Johsok’s  Karaoke</h2>
         </div>
         <div class="toolbar">
             <button onclick="switchView('songs')" class="active">歌曲列表</button>
@@ -210,6 +258,8 @@
 
     <main>
         <div id="left-panel">
+            <button id="btn-exit-fs" onclick="toggleCustomFullscreen()">回上頁 ✖</button>
+
             <div id="view-songs" class="view-section active">
                 <h3 style="color: #4facfe; margin-top:0;">歌曲庫</h3>
                 <div id="song-grid">載入中...</div>
@@ -222,7 +272,7 @@
 
             <div id="view-youtube" class="view-section">
                 <div id="youtube-container">
-                    <div id="player" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>
+                    <div id="yt-player-placeholder" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>
                 </div>
             </div>
 
@@ -245,9 +295,17 @@
                         <label>歌詞：</label>
                         <textarea id="edit-lyrics" placeholder="貼上歌詞..."></textarea>
                     </div>
-                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <div style="margin-top: 15px; margin-bottom: 30px; display: flex; gap: 10px; flex-wrap: wrap;">
                         <button onclick="saveSong()" class="btn-save-song" style="flex: 1; text-align: center;">儲存至雲端 (Supabase)</button>
                     </div>
+
+                    <hr style="border-color: rgba(255,255,255,0.1); margin-bottom: 20px;">
+                    <h3 style="color: #4facfe; margin-top:0; display:flex; justify-content: space-between; align-items:center;">
+                        管理歌曲順序 (拖曳排序)
+                        <button onclick="saveSongOrder()" class="btn-save-song" style="margin:0; font-size:12px; padding: 5px 10px;">💾 儲存排序</button>
+                    </h3>
+                    <ul id="edit-song-list" class="sortable-list">
+                        </ul>
                 </div>
             </div>
         </div>
@@ -259,7 +317,7 @@
                     <button class="btn-control btn-vol" onclick="adjustVolume(10)" title="音量增大">➕</button>
                     <button class="btn-control icon-rewind" onclick="seekVideo(-5)" title="回放5秒"></button>
                     <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
-                    <button class="btn-control icon-next" onclick="playNext()" title="下一首"></button>
+                    <button class="btn-control icon-fullscreen" onclick="toggleCustomFullscreen()" title="全螢幕"></button>
                 </div>
                 <div class="controls loop-controls">
                     <button class="btn-control btn-loop" id="btn-loop-start" onclick="setLoopStart()" title="設定循環起點">開始<br><span>--:--</span></button>
@@ -313,6 +371,7 @@
 
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
+            // RWD 自動播放優化：不在此立刻初始化，而是等到第一次 playSong 時再 init
         }
 
         // =========================================
@@ -362,12 +421,14 @@
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
-                    .order('id', { ascending: false }); // 依照 ID 遞減排序(新歌在前面)
+                    .order('sort_order', { ascending: true, nullsFirst: false }) // 優先依照排序欄位
+                    .order('id', { ascending: false }); // 如果沒設定過排序，依照 ID 遞減排序(新歌在前面)
 
                 if (error) throw error;
                 
                 songs = data || [];
                 renderSongGrid();
+                renderEditSongList(); // 重新渲染編輯區的拖拉清單
             } catch (err) {
                 console.error("無法從 Supabase 讀取資料:", err);
                 document.getElementById('song-grid').innerHTML = `<p style="color:#ff4b2b;">資料讀取失敗，請確認 Supabase 設定與連線狀態。<br>${err.message}</p>`;
@@ -389,7 +450,13 @@
             const ytId = extractVideoID(ytUrl);
             if (ytId.length !== 11) { alert("無效的 Youtube ID，請確保連結正確。"); return; }
 
-            const newSong = { id: Date.now(), title: title, ytId: ytId, lyrics: lyrics };
+            const newSong = { 
+                id: Date.now(), 
+                title: title, 
+                ytId: ytId, 
+                lyrics: lyrics,
+                sort_order: songs.length // 預設排序為最後面
+            };
 
             try {
                 // 將資料插入到 Supabase 的 songs 表格中
@@ -400,13 +467,14 @@
                 if (error) throw error;
 
                 // 成功後更新前端列表
-                songs.unshift(newSong); // 加到最前面
+                songs.push(newSong); 
                 
                 document.getElementById('edit-title').value = '';
                 document.getElementById('edit-yt').value = '';
                 document.getElementById('edit-lyrics').value = '';
                 
                 alert("🎉 歌曲已成功儲存至 Supabase 雲端資料庫！");
+                renderEditSongList(); // 更新拖曳清單
                 switchView('songs'); 
                 
             } catch (err) {
@@ -435,6 +503,7 @@
                 // 成功後從本地陣列中剔除並重新渲染
                 songs = songs.filter(s => s.id !== songId);
                 renderSongGrid();
+                renderEditSongList(); // 更新拖拉清單
                 alert("🗑️ 歌曲已從雲端刪除。");
             } catch (err) {
                 console.error("刪除失敗:", err);
@@ -443,7 +512,100 @@
         }
 
         // =========================================
-        // 以下為原本的播放與介面邏輯 (無更動)
+        // 修改：歌曲拖曳排序並存回 Supabase
+        // =========================================
+        let dragSrcEl = null;
+
+        function renderEditSongList() {
+            const list = document.getElementById('edit-song-list');
+            if (!list) return;
+            list.innerHTML = '';
+            
+            songs.forEach((song, index) => {
+                const li = document.createElement('li');
+                li.className = 'sortable-item';
+                li.draggable = true;
+                li.dataset.id = song.id;
+                li.innerHTML = `
+                    <div class="drag-handle" title="按住拖曳">☰</div>
+                    <div style="color:#fff; flex:1; font-size:14px;">${song.title}</div>
+                `;
+                
+                // 綁定拖拉事件
+                li.addEventListener('dragstart', function(e) {
+                    dragSrcEl = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/html', this.innerHTML);
+                    this.classList.add('dragging');
+                });
+                li.addEventListener('dragover', function(e) {
+                    if (e.preventDefault) e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    return false;
+                });
+                li.addEventListener('dragenter', function(e) {
+                    this.classList.add('drag-over');
+                });
+                li.addEventListener('dragleave', function(e) {
+                    this.classList.remove('drag-over');
+                });
+                li.addEventListener('drop', function(e) {
+                    if (e.stopPropagation) e.stopPropagation();
+                    if (dragSrcEl !== this) {
+                        const srcId = parseInt(dragSrcEl.dataset.id);
+                        const targetId = parseInt(this.dataset.id);
+                        
+                        // 在陣列中交換位置
+                        const srcIndex = songs.findIndex(s => s.id === srcId);
+                        const targetIndex = songs.findIndex(s => s.id === targetId);
+                        
+                        const [movedItem] = songs.splice(srcIndex, 1);
+                        songs.splice(targetIndex, 0, movedItem);
+                        
+                        renderEditSongList(); // 重新渲染編輯列
+                        renderSongGrid();     // 重新渲染主清單
+                    }
+                    return false;
+                });
+                li.addEventListener('dragend', function(e) {
+                    this.classList.remove('dragging');
+                    document.querySelectorAll('.sortable-item').forEach(item => item.classList.remove('drag-over'));
+                });
+                
+                list.appendChild(li);
+            });
+        }
+
+        async function saveSongOrder() {
+            const isAuthorized = await requireLogin();
+            if (!isAuthorized) return;
+
+            // ⚠️ 提醒：請在 Supabase 的 songs 資料表中新增一個名為 sort_order 的 int4 欄位！
+            // 整理需要更新的陣列資料 (加入新的 sort_order)
+            const updates = songs.map((song, index) => {
+                return {
+                    id: song.id,
+                    title: song.title,
+                    ytId: song.ytId,
+                    lyrics: song.lyrics,
+                    sort_order: index // 寫入目前的陣列順序
+                };
+            });
+
+            try {
+                // 使用 upsert 批次更新
+                const { error } = await supabaseClient.from('songs').upsert(updates);
+                if (error) throw error;
+
+                alert("✅ 歌曲排序已成功更新至 Supabase！\n(請確保資料庫中有 sort_order 欄位)");
+            } catch (err) {
+                console.error("更新排序失敗:", err);
+                alert(`❌ 儲存排序時發生錯誤：\n${err.message}`);
+            }
+        }
+
+        // =========================================
+        // 以下為原本的播放與介面邏輯 (部分依需求優化)
         // =========================================
 
         function extractVideoID(url) {
@@ -460,6 +622,7 @@
             return videoID;
         }
 
+        // 修改：優化 iframe 載入邏輯，完美支援手機自動播放
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
             currentPlayIndex = index;
@@ -473,30 +636,35 @@
                 switchView('songs'); return;
             }
 
-            const container = document.getElementById('youtube-container');
             const origin = window.location.origin; 
+            const container = document.getElementById('youtube-container');
 
-            container.innerHTML = `
-                <iframe id="yt-iframe" class="fallback-iframe"
-                    src="https://www.youtube.com/embed/${song.ytId}?autoplay=1&enablejsapi=1&origin=${origin}&rel=0" 
-                    title="YouTube video player" 
-                    frameborder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                    allowfullscreen>
-                </iframe>
-            `;
-
-            setTimeout(() => {
-                if (typeof YT !== 'undefined' && YT.Player) {
-                    player = new YT.Player('yt-iframe', {
-                        events: {
-                            'onStateChange': (event) => {
-                                if (event.data === YT.PlayerState.ENDED) playNext();
-                            }
+            // 為了讓 RWD 點擊清單時能順利啟動播放，如果是第一次載入，才建立 iframe
+            if (!player) {
+                container.innerHTML = `<div id="yt-iframe" class="fallback-iframe"></div>`;
+                player = new YT.Player('yt-iframe', {
+                    videoId: song.ytId,
+                    playerVars: { 
+                        'autoplay': 1, 
+                        'enablejsapi': 1, 
+                        'origin': origin, 
+                        'rel': 0,
+                        'playsinline': 1 // 重要：允許 iOS 內嵌播放
+                    },
+                    events: {
+                        'onReady': (event) => {
+                            event.target.playVideo(); // 確保 RWD 自動播放
+                        },
+                        'onStateChange': (event) => {
+                            // 播放結束自動跳下一首
+                            if (event.data === YT.PlayerState.ENDED) playNext();
                         }
-                    });
-                }
-            }, 300);
+                    }
+                });
+            } else {
+                // 如果已經有 player，直接 loadVideoById 不重建 iframe，能有效突破手機自動播放限制！
+                player.loadVideoById(song.ytId);
+            }
             
             renderPlaylist();
             updateLyricsView();
@@ -586,6 +754,13 @@
             } else {
                 switchView('lyrics');
             }
+        }
+
+        // 修改：加入自訂全螢幕邏輯 (將左側面板滿版放大)
+        function toggleCustomFullscreen() {
+            const panel = document.body; 
+            // 透過給 body 加 class 的方式將 #left-panel 固定為全螢幕
+            panel.classList.toggle('fullscreen-active');
         }
 
         function switchView(viewName) {
@@ -682,7 +857,9 @@
             if (index < currentPlayIndex) currentPlayIndex--;
             else if (index === currentPlayIndex) {
                 currentPlayIndex = -1; 
-                document.getElementById('youtube-container').innerHTML = '<div id="player" style="color:#666;">請從下方播放列表選擇歌曲。</div>';
+                // 若沒有播放器或歌曲則還原提示
+                document.getElementById('youtube-container').innerHTML = '<div id="yt-player-placeholder" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>';
+                player = null; // 重置 player
             }
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
             renderPlaylist();
