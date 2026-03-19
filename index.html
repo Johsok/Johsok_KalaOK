@@ -645,69 +645,77 @@
         // ✅ 修正 7：改為直接由環境變數或固定參數存取 GitHub 一鍵同步
         // =========================================
         async function syncToGitHub() {
-            // 請在此處填入您真正的 GitHub 帳號以及 Repo 名稱
             const owner = '替換為您的GitHub帳號'; 
             const repo = '替換為您的儲存庫名稱';
             
-            // 這裡預留給環境變數 (GitHub Secrets)。若要讓純 HTML 自動讀取，您需透過 GitHub Actions
-            // 的編譯流程 (例如 sed 指令) 在發布前將 '{{ secrets.Johsok_KaLaOK_Key }}' 字串取代為真的 Token。
-            const token = '{{ secrets.Johsok_KaLaOK_Key }}';
-            
-            // 將路徑改為直接寫入同資料夾的 song.json
-            const path = 'song.json';
-
-            // 簡易的防呆判斷，提醒還沒有替換 Token 的情形
-            if (token === '{{ secrets.Johsok_KaLaOK_Key }}' || !owner || !repo) {
-                alert("⚠️ 請注意：請確認是否已透過 GitHub Actions 將 Token 變數注入，或檢查原始碼內的帳號/Repo是否填寫正確！");
-                return;
+            // 🚨 安全機制：不要把 Token 寫死在程式碼裡！
+            // 系統會從瀏覽器本地記憶讀取，如果沒有，就彈出視窗請您輸入
+            let token = localStorage.getItem('kalaok_gh_token');
+            if (!token) {
+                token = prompt("請輸入您的 GitHub Token (這只會安全地儲存在您的瀏覽器中)：\n\n注意：Token 需要具備 Contents 的 Read & Write 權限");
+                if (!token) return; // 如果按取消就中斷
+                localStorage.setItem('kalaok_gh_token', token);
             }
 
-            const confirmSync = confirm("即將覆蓋 GitHub 上的 song.json，確定執行嗎？");
+            const path = 'song.json';
+
+            const confirmSync = confirm("即將同步並覆蓋 GitHub 上的 song.json，確定執行嗎？");
             if (!confirmSync) return;
 
             try {
-                // 1. 取得 GitHub 上舊檔案的 SHA 值
+                // 1. 取得舊檔案的 SHA 值
                 const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-                const getRes = await fetch(getUrl, { 
-                    headers: { 'Authorization': `token ${token}` } 
-                });
+                const headers = { 
+                    'Authorization': `Bearer ${token}`, // 採用標準的 Bearer 格式
+                    'Accept': 'application/vnd.github+json'
+                };
+
+                const getRes = await fetch(getUrl, { headers });
                 
                 let sha = null;
                 if (getRes.ok) {
                     const getData = await getRes.json();
                     sha = getData.sha;
+                } else if (getRes.status === 401) {
+                    alert("❌ Token 無效或已過期！\n\n如果您曾將 Token 寫在程式碼並推送到 GitHub，它已經被官方沒收了。請重新申請一個 Token，並在此重新輸入。");
+                    localStorage.removeItem('kalaok_gh_token'); // 清除無效的 Token
+                    return;
                 } else if (getRes.status !== 404) {
-                    throw new Error("無法取得舊檔案資訊，請檢查設定與 Token 權限。");
+                    throw new Error(`無法取得舊檔案資訊 (HTTP ${getRes.status})`);
                 }
 
                 // 2. 將歌曲陣列轉為 JSON，並進行 Base64 編碼以防中文亂碼
                 const contentStr = JSON.stringify(songs, null, 4);
                 const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
 
-                // 3. 透過 PUT 請求更新檔案
+                // 3. 準備 Payload，如果是新檔案則絕對不能送出 sha 參數
+                const bodyData = {
+                    message: "Auto-sync song.json from KaLa OK Web App",
+                    content: base64Content
+                };
+                if (sha) bodyData.sha = sha; // 檔案存在才加上 sha
+
+                // 4. 透過 PUT 請求更新檔案
                 const putRes = await fetch(getUrl, {
                     method: 'PUT',
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: "Auto-sync song.json from KaLa OK Web App",
-                        content: base64Content,
-                        sha: sha 
-                    })
+                    headers: { ...headers, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
                 });
 
                 if (putRes.ok) {
                     alert("🎉 同步成功！GitHub 上的歌單已更新。");
                 } else {
                     const errorData = await putRes.json();
-                    alert(`❌ 同步失敗: ${errorData.message}`);
+                    if (putRes.status === 403 || putRes.status === 404) {
+                        alert(`❌ 同步失敗 (${putRes.status})\n\n這通常是因為您的 Token 權限不足。\n請回 GitHub 確認該 Token 的 [Repository permissions -> Contents] 是否設為 [Read and write]。`);
+                    } else {
+                        alert(`❌ 同步失敗: ${errorData.message}`);
+                    }
                 }
 
             } catch(e) {
-                console.error(e);
-                alert("發生錯誤，請檢查 F12 控制台資訊。");
+                console.error("同步發生例外錯誤:", e);
+                alert("發生錯誤，請按 F12 檢查開發者工具的 Console 面板。");
             }
         }
 
