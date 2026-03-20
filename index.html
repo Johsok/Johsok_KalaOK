@@ -52,7 +52,7 @@
             background: linear-gradient(90deg, #8E2DE2 0%, #4A00E0 100%) !important;
             color: #fff !important; border: none !important;
         }
-        .btn-ai-add:hover { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
+        .btn-ai-add:hover:not(:disabled) { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
         /* 批量刪除按鈕特殊樣式 */
         .btn-batch-delete {
@@ -278,18 +278,6 @@
         .save-status-info { background: rgba(0, 0, 0, 0.4); border-left: 4px solid #4facfe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
         .save-status-info strong { color: #fff; font-size: 16px; }
 
-        /* AI 讀取中的畫面覆蓋 */
-        #ai-loading-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.85); z-index: 100000; color: #fff; text-align: center;
-            backdrop-filter: blur(5px); flex-direction: column; justify-content: center; align-items: center;
-        }
-        .spinner {
-            border: 6px solid rgba(255,255,255,0.1); border-top: 6px solid #4facfe;
-            border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin-bottom: 20px;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
         /* 自訂 Toast 氣泡提示樣式 */
         #toast-container {
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -335,12 +323,6 @@
 
     <div id="toast-container"></div>
 
-    <div id="ai-loading-overlay">
-        <div class="spinner"></div>
-        <h2 style="color: #4facfe; letter-spacing: 2px;">Gemini AI 正在連網為您精選並匯入 20 首歌曲...</h2>
-        <p style="color: #ccc;">為了確保網址有效與歌詞完整，這可能需要 15 到 30 秒，請耐心等候。</p>
-    </div>
-
     <header>
         <div class="title-area">
             <h1>傑．斯．克 的 練 歌 世 界</h1>
@@ -358,12 +340,15 @@
             <button id="btn-exit-fs" onclick="toggleCustomFullscreen()">回上頁 ✖</button>
 
             <div id="view-songs" class="view-section active">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="color: #4facfe; margin:0;">歌曲庫</h3>
-                    <div style="display: flex; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h3 style="color: #4facfe; margin:0;">歌曲庫</h3>
+                        <span id="ai-status-text" style="font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 12px; display: none;"></span>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button onclick="sortLibraryByStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #4facfe; background: rgba(0,0,0,0.3); color: #4facfe; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(79,172,254,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="僅在目前畫面依筆劃排序顯示，不存入資料庫">依筆劃<br>排序</button>
                         <button onclick="batchDeleteSongs()" class="btn-batch-delete" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="批次刪除已勾選的歌曲">🗑️批量刪除</button>
-                        <button onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
+                        <button id="btn-ai-add" onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
                     </div>
                 </div>
                 <div id="song-grid">載入中...</div>
@@ -751,7 +736,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 (強化防護網版本)
+        // AI 自動找歌 (無感背景執行 + 終極 JSON 防護網)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -760,36 +745,45 @@
             const apiKey = await getGeminiApiKey();
             if (!apiKey) return;
 
+            // 改變 UI 狀態為載入中
+            const aiStatusText = document.getElementById('ai-status-text');
+            const btnAiAdd = document.getElementById('btn-ai-add');
+            
+            aiStatusText.style.display = 'inline-block';
+            aiStatusText.innerHTML = '⏳ 正在 AI 找新歌...';
+            aiStatusText.style.color = '#ffc107';
+            aiStatusText.style.background = 'rgba(255, 193, 7, 0.1)';
+            aiStatusText.style.border = '1px solid rgba(255, 193, 7, 0.3)';
+            
+            btnAiAdd.disabled = true;
+            btnAiAdd.style.opacity = '0.5';
+            btnAiAdd.style.cursor = 'not-allowed';
+
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 加入極度嚴格的格式警告，防範 AI 產生不合法 JSON 導致解析失敗崩潰
             const promptText = `請扮演專業的 KTV DJ，推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
-⚠️ 條件嚴格限制（若違反將導致系統崩潰）：
+⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
-2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！請透過 Google Search 確保該網址能真實連上。
+2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！
 3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。
 4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
-5. ⚠️ JSON 格式極度嚴格要求：歌詞中的換行【必須】使用「\\n」字元代替，絕對不可以在 JSON 內直接換行！歌詞或歌名中若有雙引號 (")，請務必改用單引號 (') 或予以跳脫 (\\")，否則會導致 JSON 解析失敗！
 
-必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 或對話文字。格式範例：
-[
-  {
-    "title": "歌曲名稱(含歌手)",
-    "ytUrl": "真實有效的 YouTube 網址",
-    "lyrics": "第一行歌詞\\n第二行歌詞\\n第三行歌詞..."
-  }
-]`;
+請回傳包含 20 首歌曲的 JSON 陣列。包含欄位：
+- "title": 歌曲名稱(含歌手)
+- "ytUrl": 真實有效的 YouTube 網址
+- "lyrics": 完整無刪減的歌詞`;
 
             try {
-                document.getElementById('ai-loading-overlay').style.display = 'flex';
-
                 const modelName = 'gemini-2.5-flash';
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
+                // ⚠️ 終極修復：強制啟用 JSON 格式化回應，這將保證所有特殊字元 (包含引號、換行) 被正確跳脫，永不發生 JSON 解析破裂錯誤
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
-                    tools: [{ googleSearch: {} }],
-                    generationConfig: { maxOutputTokens: 8192 },
+                    generationConfig: { 
+                        response_mime_type: "application/json",
+                        maxOutputTokens: 8192 
+                    },
                     model: modelName
                 };
 
@@ -800,15 +794,13 @@
                 });
 
                 let textResult = data.candidates[0].content.parts[0].text;
-                textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
                 
                 let newSongs;
-                // 新增：防呆解析保護網，如果 AI 格式錯誤不會全網頁當機
                 try {
                     newSongs = JSON.parse(textResult);
                 } catch (parseErr) {
                     console.error("【JSON 解析失敗】AI 回傳的原始文字如下：\n", textResult);
-                    throw new Error("AI 產生的格式發生異常 (通常是歌詞中包含了未跳脫的引號或換行)。請再點擊一次「自動新增」重新生成！");
+                    throw new Error("AI 產生的資料格式發生異常。");
                 }
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
@@ -841,18 +833,35 @@
                     const { error } = await supabaseClient.from('songs').insert(insertData);
                     if (error) throw error;
 
-                    showToast(`🎉 AI 任務完成！成功自動新增了 ${insertData.length} 首國語熱門歌曲！`, 3000);
+                    // 改變狀態為成功
+                    aiStatusText.innerHTML = `✅ 已抓完 ${insertData.length} 首新歌`;
+                    aiStatusText.style.color = '#38ef7d';
+                    aiStatusText.style.background = 'rgba(56, 239, 125, 0.1)';
+                    aiStatusText.style.border = '1px solid rgba(56, 239, 125, 0.3)';
+                    setTimeout(() => { aiStatusText.style.display = 'none'; }, 5000);
+
                     await fetchSongsFromSupabase(); 
                 }
 
             } catch (err) {
                 console.error(err);
-                alert(`❌ 自動新增發生錯誤：\n${err.message}`);
+                // 背景錯誤通知，不阻擋畫面
+                showToast(`❌ 自動新增發生錯誤：\n${err.message}`, 4000);
+                
+                aiStatusText.innerHTML = '❌ 抓歌失敗';
+                aiStatusText.style.color = '#ff4b2b';
+                aiStatusText.style.background = 'rgba(255, 75, 43, 0.1)';
+                aiStatusText.style.border = '1px solid rgba(255, 75, 43, 0.3)';
+                setTimeout(() => { aiStatusText.style.display = 'none'; }, 5000);
+
                 if (err.message.includes("API key not valid") || err.message.includes("API Key") || err.message.includes("Google 端") || err.message.includes("not found")) {
                     localStorage.removeItem('gemini_api_key');
                 }
             } finally {
-                document.getElementById('ai-loading-overlay').style.display = 'none';
+                // 恢復按鈕狀態
+                btnAiAdd.disabled = false;
+                btnAiAdd.style.opacity = '1';
+                btnAiAdd.style.cursor = 'pointer';
             }
         }
 
