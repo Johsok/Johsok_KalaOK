@@ -361,6 +361,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="color: #4facfe; margin:0;">歌曲庫</h3>
                     <div style="display: flex; gap: 8px;">
+                        <button onclick="sortLibraryByStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #4facfe; background: rgba(0,0,0,0.3); color: #4facfe; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(79,172,254,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="僅在目前畫面依筆劃排序顯示，不存入資料庫">依筆劃<br>排序</button>
                         <button onclick="batchDeleteSongs()" class="btn-batch-delete" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="批次刪除已勾選的歌曲">🗑️批量刪除</button>
                         <button onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
                     </div>
@@ -406,7 +407,10 @@
                     <hr style="border-color: rgba(255,255,255,0.1); margin-bottom: 20px;">
                     <h3 style="color: #4facfe; margin-top:0; display:flex; justify-content: space-between; align-items:center;">
                         管理歌曲順序 (拖曳排序)
-                        <button onclick="saveSongOrder()" class="btn-save-song" style="margin:0; font-size:12px; padding: 5px 10px;">💾 儲存排序</button>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="sortEditListByStrokes()" class="btn-save-song" style="margin:0; font-size:12px; padding: 5px 10px; background: rgba(255,193,7,0.15); border: 1px solid #ffc107; color: #ffc107; box-shadow:none;" title="依筆劃重新排列所有歌曲">🔠 依筆劃排序</button>
+                            <button onclick="saveSongOrder()" class="btn-save-song" style="margin:0; font-size:12px; padding: 5px 10px;">💾 儲存排序</button>
+                        </div>
                     </h3>
                     <ul id="edit-song-list" class="sortable-list">
                         </ul>
@@ -472,7 +476,7 @@
         let isDraggingProgress = false;
         let progressInterval = null;
 
-        // 【修正1】安全解析 LocalStorage，避免因資料損毀導致系統全面當機 (卡在"載入中")
+        // 安全解析 LocalStorage
         try {
             const storedPlaylist = localStorage.getItem('kalaok_playlist');
             if (storedPlaylist && storedPlaylist !== 'undefined' && storedPlaylist !== 'null') {
@@ -502,7 +506,7 @@
             }
         };
 
-        // 【修正2】系統啟動器：確保 DOM 準備好且 Supabase 正常載入後才執行後續動作
+        // 系統啟動器
         function initApp() {
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             
@@ -515,12 +519,10 @@
                 });
             }
 
-            // 無論有沒有網路，先將基本的 UI 畫出來
             renderPlaylist();
             switchView('songs');
             initProgressBar();
 
-            // 檢查 Supabase 是否成功從 CDN 載入
             if (typeof window.supabase === 'undefined') {
                 const grid = document.getElementById('song-grid');
                 if (grid) {
@@ -529,15 +531,11 @@
                 return;
             }
 
-            // 初始化 Supabase Client
             supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-            // 正式向資料庫要資料
             fetchSongsFromSupabase();
             loadPlaylistFromDB(); 
         }
 
-        // 綁定啟動事件
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
@@ -619,8 +617,9 @@
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
+                    // 修正 1：嚴格依照資料庫的 sort_order 進行排序抓取
                     .order('sort_order', { ascending: true, nullsFirst: false })
-                    .order('id', { ascending: false }); 
+                    .order('id', { ascending: true }); 
 
                 if (error) throw error;
                 
@@ -662,9 +661,12 @@
                     showToast("✅ 歌曲資料已成功更新！");
                     cancelEdit(); 
                 } else {
+                    // 修正 2：手動加歌時，抓出目前最大排序編號 +1，確保新歌永遠排在資料庫最底部
+                    const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
+                    
                     const newSong = { 
                         id: Date.now(), title: title, ytId: ytId, lyrics: lyrics,
-                        sort_order: songs.length 
+                        sort_order: maxOrder + 1 
                     };
                     const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
@@ -855,6 +857,32 @@
         // =========================================
         let dragSrcEl = null;
 
+        // 修正 3：僅在歌曲庫畫面進行本地依筆劃排序 (不寫入資料庫)
+        function sortLibraryByStrokes() {
+            if (songs.length === 0) return;
+            // 複製陣列進行排序，避免更動到原始 songs 陣列的順序
+            const sortedSongs = [...songs].sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+            renderSongGrid(sortedSongs);
+            showToast("🔠 歌曲庫已依筆劃排序顯示 (僅變更顯示，未存入資料庫)");
+        }
+
+        // 修正 4：在編輯區正式依照筆劃排序，並重新賦予排序號碼準備存檔
+        function sortEditListByStrokes() {
+            if (songs.length === 0) return;
+            
+            // 改變實際的 songs 陣列
+            songs.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+            
+            // 將陣列索引覆蓋回 sort_order 屬性 (本地暫存)
+            songs.forEach((song, index) => {
+                song.sort_order = index;
+            });
+
+            renderEditSongList(); 
+            renderSongGrid(); // 同步更新前方顯示
+            showToast("🔠 已依筆劃排序！請點擊右方「💾 儲存排序」正式寫入資料庫。");
+        }
+
         function renderEditSongList() {
             const list = document.getElementById('edit-song-list');
             if (!list) return;
@@ -1036,7 +1064,6 @@
             return videoID;
         }
 
-        // 【修正3】加入 YouTube 播放器載入防呆機制
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
 
@@ -1227,20 +1254,22 @@
                 if(activeBtn) activeBtn.classList.add('active');
             }
 
+            // 切換畫面時，預設顯示原本資料庫排序的歌單
             if (viewName === 'songs') renderSongGrid();
         }
 
-        function renderSongGrid() {
+        // 修改 renderSongGrid 接受自訂陣列，讓畫面可以暫時顯示依筆劃排序
+        function renderSongGrid(displaySongs = songs) {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
             grid.innerHTML = '';
             
-            if (songs.length === 0) {
+            if (displaySongs.length === 0) {
                 grid.innerHTML = '<div style="grid-column: 1 / -1; color:#ccc;">目前歌曲庫沒有資料喔，趕快去新增吧！</div>';
                 return;
             }
 
-            songs.forEach(song => {
+            displaySongs.forEach(song => {
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 card.innerHTML = `
