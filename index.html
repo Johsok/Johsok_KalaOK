@@ -112,22 +112,20 @@
             visibility: visible; opacity: 1; z-index: 1; pointer-events: auto; transform: scale(1);
         }
 
-        /* 修正：進一步將音樂卡片與 UI 縮小 (100px) */
+        /* 音樂卡片與 UI */
         #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .song-card { 
-            /* 為了容納左上角的 checkbox，上方 padding 加大一些 */
             padding: 22px 8px 10px 8px; text-align: center; 
             background: rgba(0, 0, 0, 0.3); border-radius: 10px; 
             border: 1px solid rgba(255,255,255,0.05);
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            position: relative; /* 讓 checkbox 絕對定位有依據 */
+            position: relative; 
         }
         .song-card:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.05); border-color: rgba(79, 172, 254, 0.5); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         
-        /* 縮小卡片內字體尺寸 */
         .song-card strong { margin-bottom: 8px; color: #fff; font-size: 12px; word-break: break-all; line-height: 1.3; }
         
-        /* 新增：批量刪除的 Checkbox 樣式 */
+        /* 批量刪除的 Checkbox 樣式 */
         .song-select-cb {
             position: absolute;
             top: 5px;
@@ -135,13 +133,13 @@
             width: 15px;
             height: 15px;
             cursor: pointer;
-            accent-color: #ff4b2b; /* 勾選時的顏色 */
+            accent-color: #ff4b2b; 
         }
 
         .card-btn-group { display: flex; gap: 6px; margin-top: auto; }
         
         /* 統一按鈕小巧風格 */
-        .add-to-playlist-btn, .delete-song-btn, .edit-song-btn {
+        .add-to-playlist-btn, .edit-song-btn {
             width: 28px; height: 28px; flex-shrink: 0; 
             border: none; border-radius: 50%;
             display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold;
@@ -150,10 +148,6 @@
         .add-to-playlist-btn:hover { background: #00f2fe; color: #000; box-shadow: 0 0 10px #00f2fe; transform: scale(1.1); }
         .add-to-playlist-btn::before { content: '+'; margin-top: -2px; }
 
-        .delete-song-btn { background: rgba(255,75,43,0.1); color: #ff4b2b; }
-        .delete-song-btn:hover { background: #ff4b2b; color: #fff; box-shadow: 0 0 10px #ff4b2b; transform: scale(1.1); }
-        
-        /* 編輯歌曲按鈕 */
         .edit-song-btn { background: rgba(255, 193, 7, 0.1); color: #ffc107; }
         .edit-song-btn:hover { background: #ffc107; color: #000; box-shadow: 0 0 10px #ffc107; transform: scale(1.1); }
 
@@ -292,7 +286,7 @@
             transform: translateY(0);
         }
 
-        /* RWD 響應式設計 (手機與平板完美適配) */
+        /* RWD 響應式設計 */
         @media (max-width: 900px) {
             body { height: auto; overflow: auto; padding: 10px; }
             main { flex-direction: column; overflow: visible; gap: 15px; }
@@ -315,7 +309,6 @@
                 line-height: 1.6;
                 word-break: break-word; 
             }
-            /* 手機版卡片更小一點 */
             #song-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
         }
     </style>
@@ -326,8 +319,8 @@
 
     <div id="ai-loading-overlay">
         <div class="spinner"></div>
-        <h2 style="color: #4facfe; letter-spacing: 2px;">Gemini AI 正在為您精選並匯入 20 首歌曲...</h2>
-        <p style="color: #ccc;">這可能需要 15 到 30 秒，請耐心等候。</p>
+        <h2 style="color: #4facfe; letter-spacing: 2px;">Gemini AI 正在連網為您精選並匯入 20 首歌曲...</h2>
+        <p style="color: #ccc;">為了確保網址有效與歌詞完整，這可能需要 15 到 30 秒，請耐心等候。</p>
     </div>
 
     <header>
@@ -451,7 +444,7 @@
         let loopEnd = null;
         let loopInterval = null;
 
-        let editingSongId = null; // 紀錄目前正在編輯的歌曲 ID
+        let editingSongId = null; 
 
         // =========================================
         // 核心 API 處理工具
@@ -654,10 +647,9 @@
         }
 
         // =========================================
-        // 新增：批量刪除歌曲功能
+        // 批量刪除歌曲功能
         // =========================================
         async function batchDeleteSongs() {
-            // 找出所有被勾選的 Checkbox
             const checkboxes = document.querySelectorAll('.song-select-cb:checked');
             if (checkboxes.length === 0) {
                 alert("請先勾選要刪除的歌曲！");
@@ -667,16 +659,13 @@
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return;
 
-            // 二次確認
             if (!confirm(`確定要從雲端永久刪除這 ${checkboxes.length} 首歌曲嗎？`)) return;
 
-            // 取出要刪除的 ID 陣列
             const idsToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value));
 
             try {
                 showToast(`⏳ 正在刪除 ${idsToDelete.length} 首歌曲...`, 1000);
 
-                // 利用 Supabase 的 .in() 語法一次刪除多筆
                 const { error } = await supabaseClient
                     .from('songs')
                     .delete()
@@ -684,7 +673,6 @@
 
                 if (error) throw error;
 
-                // 更新前端陣列與畫面
                 songs = songs.filter(s => !idsToDelete.includes(s.id));
                 renderSongGrid();
                 renderEditSongList(); 
@@ -695,29 +683,8 @@
             }
         }
 
-        // 註：原本的 deleteSong() 保留供未來擴充參考，目前前端介面已改用 checkbox 批量刪除
-        async function deleteSong(songId) {
-            const isAuthorized = await requireLogin();
-            if (!isAuthorized) return;
-
-            if (!confirm("確定要從雲端資料庫中永久刪除這首歌嗎？")) return;
-            
-            try {
-                const { error } = await supabaseClient.from('songs').delete().eq('id', songId);
-                if (error) throw error;
-
-                songs = songs.filter(s => s.id !== songId);
-                renderSongGrid();
-                renderEditSongList(); 
-                showToast("🗑️ 歌曲已從雲端刪除。");
-            } catch (err) {
-                console.error("刪除失敗:", err);
-                alert(`❌ 刪除發生錯誤：\n${err.message}`);
-            }
-        }
-
         // =========================================
-        // AI 自動找歌 (修正排到最後面邏輯)
+        // AI 自動找歌 (深度優化：連網搜尋、防截斷、純國語、排最後)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -728,15 +695,18 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            const promptText = `請推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的經典或當紅【國語流行歌曲】。
-條件限制：
-1. 語言限制：只能是「國語(中文)」歌曲，⚠️ 絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲。
-2. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
-3. 真實連結：⚠️ "ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造 11 碼 ID！
-必須只回傳嚴格的 JSON 陣列格式，無任何其他文字。包含欄位：
+            // 強化提示詞：強調網址真實性、歌詞完整性、嚴格的語言限制
+            const promptText = `請扮演專業的 KTV DJ，推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
+⚠️ 條件嚴格限制（若違反將導致系統崩潰）：
+1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
+2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！請確保該網址能真實連上。
+3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。絕對不可因為字數長就使用「略」、「...」等省略符號截斷歌詞。
+4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
+
+必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 文字。包含欄位：
 - "title": 歌曲名稱(含歌手，例如 "周杰倫 - 擱淺")
 - "ytUrl": 真實有效的 YouTube 網址
-- "lyrics": 完整歌詞`;
+- "lyrics": 完整無刪減的歌詞`;
 
             try {
                 document.getElementById('ai-loading-overlay').style.display = 'flex';
@@ -746,7 +716,12 @@
                 
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
-                    generationConfig: { response_mime_type: "application/json" },
+                    // 啟用 Google 搜尋工具，讓 AI 找真實網址與完整歌詞
+                    tools: [{ googleSearch: {} }],
+                    generationConfig: { 
+                        response_mime_type: "application/json",
+                        maxOutputTokens: 8192 // 確保 20 首歌的歌詞不會因為 token 不足被截斷
+                    },
                     model: modelName
                 };
 
@@ -763,7 +738,7 @@
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
                     
-                    // 修正：明確抓出目前資料庫中最大的 sort_order，確保新歌一律加在最後面
+                    // 確保新歌排在資料庫最尾端
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     const startOrder = maxOrder + 1;
 
@@ -775,7 +750,7 @@
                             title: s.title,
                             ytId: yID,
                             lyrics: s.lyrics,
-                            sort_order: startOrder + i // 賦予比現有最大值還大的排序編號
+                            sort_order: startOrder + i 
                         };
                     });
 
@@ -1124,7 +1099,6 @@
             if (viewName === 'songs') renderSongGrid();
         }
 
-        // 修正：渲染歌曲卡片時，加入 Checkbox 並移除單一刪除按鈕
         function renderSongGrid() {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
