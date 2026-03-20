@@ -789,23 +789,28 @@
             if (!isAuthorized) return;
 
             try {
-                await supabaseClient.from('saved_playlist').delete().neq('id', 0); 
+                // 1. 刪除舊資料，並嚴格檢查是否有報錯
+                const { error: deleteError } = await supabaseClient.from('saved_playlist').delete().neq('id', 0); 
+                if (deleteError) throw deleteError;
                 
                 const insertData = playlist.map((song, index) => ({
                     id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
                     sort_order: index,
-                    lyrics: song.lyrics 
+                    lyrics: song.lyrics || "" // 確保沒有歌詞時寫入空字串，避免 null 報錯
                 }));
 
+                // 2. 寫入新資料，並嚴格檢查是否有報錯
                 if (insertData.length > 0) {
-                    await supabaseClient.from('saved_playlist').insert(insertData);
+                    const { error: insertError } = await supabaseClient.from('saved_playlist').insert(insertData);
+                    if (insertError) throw insertError;
                 }
+                
                 showToast("✅ 播放列表已成功儲存至雲端！下次開啟將自動載入。");
             } catch (e) {
-                console.warn("⚠️ 同步播放列表失敗", e);
-                alert("❌ 儲存失敗，請確保 Supabase 已建立 'saved_playlist' 資料表且具備對應欄位 (id, ytId, title, lyrics, sort_order)。");
+                console.error("⚠️ 同步播放列表失敗", e);
+                alert(`❌ 儲存失敗！\n錯誤原因：${e.message}\n\n請檢查 Supabase 是否已建立 'saved_playlist' 資料表，欄位是否正確，以及 RLS 權限是否允許 Insert/Delete。`);
             }
         }
 
