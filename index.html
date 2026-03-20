@@ -428,7 +428,7 @@
         let editingSongId = null; // 紀錄目前正在編輯的歌曲 ID
 
         // =========================================
-        // 核心 API 處理工具 (參考 AI 配音專家加入了重試機制)
+        // 核心 API 處理工具
         // =========================================
         const fetchWithRetry = async (url, options, retries = 3) => {
             let delay = 1000;
@@ -453,7 +453,6 @@
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             
             // 針對 iOS / 觸控螢幕的全局按鈕提示優化
-            // 當點擊帶有 title 屬性的按鈕時，主動彈出提示氣泡
             if (isTouchDevice) {
                 document.addEventListener('click', function(e) {
                     const target = e.target.closest('[title]');
@@ -497,7 +496,7 @@
 
         async function requireLogin(forcePrompt = false) {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session !== null && !forcePrompt) return true; // 已有 Session，直接放行
+            if (session !== null && !forcePrompt) return true; 
 
             let pwd = localStorage.getItem('supabase_admin_pwd');
             
@@ -568,7 +567,7 @@
             if (ytId.length !== 11) { alert("無效的 Youtube ID，請確保連結正確。"); return; }
 
             try {
-                showToast("⏳ 正在儲存到雲端資料庫...", 1000); // 先給予即時回饋
+                showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
                     const { error } = await supabaseClient
@@ -652,7 +651,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 (修正：加入重試機制與強化的模型呼叫)
+        // AI 自動找歌 (修正：加入條件限制、要求真實 YT 連結)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -662,28 +661,30 @@
             if (!apiKey) return;
 
             const currentTitles = songs.map(s => s.title).join(", ");
-            // 修正：更精簡的 Prompt 以節省 Token 並降低出錯率
-            const promptText = `請推薦20首台灣KTV熱門國台語歌曲。不要與以下歌曲重複：${currentTitles}。
-必須只回傳JSON陣列格式，無其他文字。包含欄位：
-- "title": 歌曲名稱(含歌手)
-- "ytUrl": YouTube網址(標準watch?v=格式)
+            
+            // 修正：強化 Prompt 提示詞，限制「僅限國語」、「熱度高/排行前100」，並嚴格要求「真實有效的 YT 連結」避免破圖
+            const promptText = `請推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的經典或當紅【國語流行歌曲】。
+條件限制：
+1. 語言限制：只能是「國語(中文)」歌曲，⚠️ 絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲。
+2. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
+3. 真實連結：⚠️ "ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造 11 碼 ID！
+必須只回傳嚴格的 JSON 陣列格式，無任何其他文字。包含欄位：
+- "title": 歌曲名稱(含歌手，例如 "周杰倫 - 擱淺")
+- "ytUrl": 真實有效的 YouTube 網址
 - "lyrics": 完整歌詞`;
 
             try {
                 document.getElementById('ai-loading-overlay').style.display = 'flex';
 
-                // 修正：明確指定最新、最穩定的模型名稱
                 const modelName = 'gemini-2.5-flash';
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
-                // 修正：參考配音專家，在 Payload 中加入明確的 model 宣告
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
                     generationConfig: { response_mime_type: "application/json" },
                     model: modelName
                 };
 
-                // 修正：使用自訂的 fetchWithRetry 函數自動處理暫時性網路錯誤
                 const data = await fetchWithRetry(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -691,8 +692,6 @@
                 });
 
                 let textResult = data.candidates[0].content.parts[0].text;
-                
-                // 防呆過濾機制：避免 AI 仍夾雜 Markdown 標籤 (```json ... ```) 導致無法解析
                 textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
                 
                 const newSongs = JSON.parse(textResult);
@@ -714,14 +713,13 @@
                     const { error } = await supabaseClient.from('songs').insert(insertData);
                     if (error) throw error;
 
-                    showToast(`🎉 AI 任務完成！成功自動新增了 ${insertData.length} 首歌曲！`, 3000);
+                    showToast(`🎉 AI 任務完成！成功自動新增了 ${insertData.length} 首國語熱門歌曲！`, 3000);
                     await fetchSongsFromSupabase(); 
                 }
 
             } catch (err) {
                 console.error(err);
                 alert(`❌ 自動新增發生錯誤：\n${err.message}`);
-                // 針對金鑰相關錯誤清除記憶
                 if (err.message.includes("API key not valid") || err.message.includes("API Key") || err.message.includes("Google 端") || err.message.includes("not found")) {
                     localStorage.removeItem('gemini_api_key');
                 }
@@ -793,7 +791,7 @@
             if (!isAuthorized) return;
 
             try {
-                showToast("⏳ 正在儲存歌曲排序...", 1000); // 即時回饋
+                showToast("⏳ 正在儲存歌曲排序...", 1000); 
                 const updatePromises = songs.map((song, index) => {
                     return supabaseClient.from('songs').update({ sort_order: index }).eq('id', song.id); 
                 });
@@ -806,7 +804,7 @@
         }
 
         // =========================================
-        // 播放列表的雲端儲存與讀取 (修正報錯邏輯)
+        // 播放列表的雲端儲存與讀取
         // =========================================
 
         async function savePlaylistToDB() {
@@ -814,9 +812,8 @@
             if (!isAuthorized) return;
 
             try {
-                showToast("⏳ 正在將播放列表同步至雲端...", 1000); // 即時回饋
+                showToast("⏳ 正在將播放列表同步至雲端...", 1000); 
 
-                // 嚴格檢查錯誤
                 const { error: deleteError } = await supabaseClient.from('saved_playlist').delete().neq('id', 0); 
                 if (deleteError) throw deleteError;
                 
@@ -825,7 +822,7 @@
                     ytId: song.ytId,
                     title: song.title,
                     sort_order: index,
-                    lyrics: song.lyrics || "" // 防呆機制
+                    lyrics: song.lyrics || "" 
                 }));
 
                 if (insertData.length > 0) {
