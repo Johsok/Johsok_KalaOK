@@ -660,13 +660,24 @@
                     if (error) throw error;
                     showToast("✅ 歌曲資料已成功更新！");
                     cancelEdit(); 
-                } else {
-                    // 修正 2：手動加歌時，抓出目前最大排序編號 +1，確保新歌永遠排在資料庫最底部
-                    const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
+                    } else {
+                    // 1. 先自動修復現有舊歌的排序 (把空白變成真實數字)，確保排序基底 100% 正確
+                    if (songs.length > 0) {
+                        const fixPromises = songs.map((s, idx) => {
+                            if (s.sort_order !== idx) {
+                                return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id);
+                            }
+                            return null;
+                        }).filter(p => p !== null);
+                        if (fixPromises.length > 0) await Promise.all(fixPromises);
+                    }
+
+                    // 2. 因為舊歌排序已被修復，新歌的排序編號直接使用目前陣列的總長度，絕對排在最後面！
+                    const startOrder = songs.length;
                     
                     const newSong = { 
                         id: Date.now(), title: title, ytId: ytId, lyrics: lyrics,
-                        sort_order: maxOrder + 1 
+                        sort_order: startOrder 
                     };
                     const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
