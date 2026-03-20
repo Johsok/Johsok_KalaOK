@@ -673,7 +673,7 @@
                 document.getElementById('ai-loading-overlay').style.display = 'flex';
 
                 // 修正：明確指定最新、最穩定的模型名稱
-                const modelName = 'gemini-1.5-flash-latest';
+                const modelName = 'gemini-1.5-flash';
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
                 // 修正：參考配音專家，在 Payload 中加入明確的 model 宣告
