@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>傑斯克的練歌世界 Johsok's  Karaoke</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
     <style>
         /* =========================================
             極致精美版：全域基礎重置與排版 
@@ -321,6 +321,10 @@
 </head>
 <body>
 
+    <audio id="bg-audio-keepalive" loop playsinline>
+        <source src="data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" type="audio/mpeg">
+    </audio>
+
     <div id="toast-container"></div>
 
     <header>
@@ -378,7 +382,7 @@
                     </div>
                     <div class="form-group">
                         <label>Youtube 連結：</label>
-                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: https://www.youtube.com/watch?v=K4DyBUG242c">
+                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: [https://www.youtube.com/watch?v=K4DyBUG242c](https://www.youtube.com/watch?v=K4DyBUG242c)">
                     </div>
                     <div class="form-group">
                         <label>歌詞：</label>
@@ -438,12 +442,12 @@
         </div>
     </main>
 
-    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="[https://www.youtube.com/iframe_api](https://www.youtube.com/iframe_api)"></script>
     <script>
         // =========================================
         // 核心全域變數與安全初始化防護網
         // =========================================
-        const supabaseUrl = 'https://doicpmczzvharnszpbsr.supabase.co';
+        const supabaseUrl = '[https://doicpmczzvharnszpbsr.supabase.co](https://doicpmczzvharnszpbsr.supabase.co)';
         const supabaseKey = 'sb_publishable_c46aC5fxRALpXswtxy8aIA_E-LHxIu9';
         let supabaseClient = null;
 
@@ -493,6 +497,14 @@
 
         // 系統啟動器
         function initApp() {
+            // 新增：使用者第一次點擊畫面時，啟動無聲背景音軌 (解決手機端離開瀏覽器時 YouTube 停止播放的問題)
+            document.body.addEventListener('click', function() {
+                const bgAudio = document.getElementById('bg-audio-keepalive');
+                if (bgAudio && bgAudio.paused) {
+                    bgAudio.play().catch(e => console.log("背景保活音訊啟動失敗:", e));
+                }
+            }, { once: true });
+
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             
             if (isTouchDevice) {
@@ -526,6 +538,28 @@
         } else {
             initApp();
         }
+
+        // 新增：監聽網頁可見性變化。當切換到背景時，嘗試強迫 YouTube 繼續播放
+        let wasPlayingBeforeHidden = false;
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // 進入背景前如果是播放狀態，記錄下來
+                if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    wasPlayingBeforeHidden = true;
+                    // 部分瀏覽器會強制暫停 iframe，我們在這裡嘗試延遲一小段時間後強制再次播放
+                    setTimeout(() => {
+                        if (player && typeof player.playVideo === 'function') player.playVideo();
+                    }, 100);
+                } else {
+                    wasPlayingBeforeHidden = false;
+                }
+            } else {
+                // 回到前景時，如果原本是播放的，確保它繼續播放
+                if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') {
+                    player.playVideo();
+                }
+            }
+        });
 
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
@@ -761,16 +795,14 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 修正：移除容易造成超時與錯誤的 googleSearch 工具，改靠模型本身強大知識庫。
-            // 這樣不但速度會從 30秒 變成 3~5秒，也不會再因為標籤註腳而破壞 JSON。
-            const promptText = `請基於你的內部知識庫，推薦 10 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
+            const promptText = `請基於你的內部知識庫，推薦 5 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
-2. 真實連結："ytUrl" 必須是真實存在的 YouTube 影片網址 (例如 https://www.youtube.com/watch?v=...)。請基於你龐大的訓練資料，提供這些華語經典神曲真實且最廣為人知的 YouTube ID，絕對不可隨機捏造亂碼！
+2. 真實連結："ytUrl" 必須是真實存在的 YouTube 影片網址 (例如 [https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=)...)。請基於你龐大的訓練資料，提供這些華語經典神曲真實且最廣為人知的 YouTube ID，絕對不可隨機捏造亂碼！
 3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。
 4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
 
-請回傳包含 10 首歌曲的 JSON 陣列。包含欄位：
+請回傳包含 5 首歌曲的 JSON 陣列。包含欄位：
 - "title": 歌曲名稱(含歌手)
 - "ytUrl": 真實有效的 YouTube 網址
 - "lyrics": 完整無刪減的歌詞`;
@@ -779,8 +811,6 @@
                 const modelName = 'gemini-2.5-flash';
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
-                // 修正：拿掉工具，強制重新開啟 response_mime_type: "application/json"
-                // 這是最穩定、最官方、最不會報格式錯誤的寫法
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
                     generationConfig: { 
@@ -802,12 +832,15 @@
                     throw new Error("AI 未回傳有效內容，請稍後再試。");
                 }
                 
+                // 新增修正：過濾 AI 回傳可能附帶的 Markdown 語法 (```json ... ```)，避免 JSON 解析失敗
+                let cleanedText = textResult.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+
                 let newSongs;
                 try {
-                    newSongs = JSON.parse(textResult.trim());
+                    newSongs = JSON.parse(cleanedText);
                 } catch (parseErr) {
                     console.error("【JSON 解析失敗】AI 回傳的原始文字如下：\n", textResult);
-                    throw new Error("AI 產生的資料格式發生異常。");
+                    throw new Error("AI 產生的資料格式發生異常，請重試。");
                 }
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
@@ -826,19 +859,28 @@
                     const startOrder = songs.length;
 
                     const insertData = newSongs.map((s, i) => {
-                        let yID = extractVideoID(s.ytUrl);
+                        // 新增修正：容錯處理，避免 AI 產生的 key 名稱有誤差 (如 youtubeUrl, url 等) 或沒有產生
+                        let ytUrl = s.ytUrl || s.youtubeUrl || s.url || s.link || "";
+                        let yID = extractVideoID(ytUrl);
                         if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
+                        
+                        let title = s.title || s.name || "未知歌曲";
+                        let lyrics = s.lyrics || s.lyric || s.text || "暫無歌詞";
+
                         return {
-                            id: Date.now() + i, 
-                            title: s.title,
+                            id: Date.now() + i, // 新增修正：避免迴圈執行過快導致時間戳重複，加上 index i
+                            title: title,
                             ytId: yID,
-                            lyrics: s.lyrics,
+                            lyrics: lyrics,
                             sort_order: startOrder + i 
                         };
                     });
 
                     const { error } = await supabaseClient.from('songs').insert(insertData);
-                    if (error) throw error;
+                    if (error) {
+                        console.error("Supabase 寫入錯誤細節：", error);
+                        throw new Error(`資料庫寫入失敗: ${error.message || '未知錯誤'}`);
+                    }
 
                     // 改變狀態為成功
                     aiStatusText.innerHTML = `✅ 已抓完 ${insertData.length} 首新歌`;
@@ -1065,6 +1107,10 @@
         }
 
         function extractVideoID(url) {
+            // 新增修正：防止因為 url 為 undefined 或 null 導致 .match 報錯卡死
+            if (!url) return ""; 
+            url = String(url);
+            
             let videoID = "";
             const match = url.match(/^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/);
             if (match && match[7].length == 11) {
