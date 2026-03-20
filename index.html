@@ -54,6 +54,13 @@
         }
         .btn-ai-add:hover { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
+        /* 批量刪除按鈕特殊樣式 */
+        .btn-batch-delete {
+            background: rgba(255, 75, 43, 0.8) !important;
+            color: #fff !important; border: none !important;
+        }
+        .btn-batch-delete:hover { box-shadow: 0 4px 15px rgba(255, 75, 43, 0.5) !important; transform: translateY(-2px); }
+
         main { display: flex; flex: 1; gap: 20px; overflow: hidden; }
         
         #left-panel { 
@@ -105,26 +112,41 @@
             visibility: visible; opacity: 1; z-index: 1; pointer-events: auto; transform: scale(1);
         }
 
-        /* 音樂卡片與 UI */
-        #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+        /* 修正：進一步將音樂卡片與 UI 縮小 (100px) */
+        #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .song-card { 
-            padding: 12px 10px; text-align: center; 
+            /* 為了容納左上角的 checkbox，上方 padding 加大一些 */
+            padding: 22px 8px 10px 8px; text-align: center; 
             background: rgba(0, 0, 0, 0.3); border-radius: 10px; 
             border: 1px solid rgba(255,255,255,0.05);
             display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; /* 讓 checkbox 絕對定位有依據 */
         }
         .song-card:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.05); border-color: rgba(79, 172, 254, 0.5); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-        .song-card strong { margin-bottom: 8px; color: #fff; font-size: 13px; word-break: break-all; line-height: 1.4; }
         
+        /* 縮小卡片內字體尺寸 */
+        .song-card strong { margin-bottom: 8px; color: #fff; font-size: 12px; word-break: break-all; line-height: 1.3; }
+        
+        /* 新增：批量刪除的 Checkbox 樣式 */
+        .song-select-cb {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+            accent-color: #ff4b2b; /* 勾選時的顏色 */
+        }
+
         .card-btn-group { display: flex; gap: 6px; margin-top: auto; }
         
         /* 統一按鈕小巧風格 */
         .add-to-playlist-btn, .delete-song-btn, .edit-song-btn {
-            width: 30px; height: 30px; flex-shrink: 0; 
+            width: 28px; height: 28px; flex-shrink: 0; 
             border: none; border-radius: 50%;
-            display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 14px; font-weight: bold;
+            display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold;
         }
-        .add-to-playlist-btn { background: rgba(255,255,255,0.1); color: #fff; font-size: 18px; }
+        .add-to-playlist-btn { background: rgba(255,255,255,0.1); color: #fff; font-size: 16px; }
         .add-to-playlist-btn:hover { background: #00f2fe; color: #000; box-shadow: 0 0 10px #00f2fe; transform: scale(1.1); }
         .add-to-playlist-btn::before { content: '+'; margin-top: -2px; }
 
@@ -293,7 +315,8 @@
                 line-height: 1.6;
                 word-break: break-word; 
             }
-            #song-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+            /* 手機版卡片更小一點 */
+            #song-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
         }
     </style>
 </head>
@@ -326,7 +349,10 @@
             <div id="view-songs" class="view-section active">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="color: #4facfe; margin:0;">歌曲庫</h3>
-                    <button onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="batchDeleteSongs()" class="btn-batch-delete" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="批次刪除已勾選的歌曲">🗑️批量刪除</button>
+                        <button onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
+                    </div>
                 </div>
                 <div id="song-grid">載入中...</div>
             </div>
@@ -452,7 +478,6 @@
         document.addEventListener("DOMContentLoaded", () => {
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             
-            // 針對 iOS / 觸控螢幕的全局按鈕提示優化
             if (isTouchDevice) {
                 document.addEventListener('click', function(e) {
                     const target = e.target.closest('[title]');
@@ -462,7 +487,6 @@
                 });
             }
             
-            // 網頁載入時從 Supabase 抓取歌曲，並強制嘗試載入雲端播放列表
             fetchSongsFromSupabase();
             loadPlaylistFromDB(); 
         });
@@ -481,7 +505,6 @@
             toast.innerText = msg;
             container.appendChild(toast);
 
-            // 進入動畫後，自動淡出並移除
             setTimeout(() => {
                 toast.style.opacity = '0';
                 toast.style.transform = 'translateY(-20px)';
@@ -630,6 +653,49 @@
             switchView('songs'); 
         }
 
+        // =========================================
+        // 新增：批量刪除歌曲功能
+        // =========================================
+        async function batchDeleteSongs() {
+            // 找出所有被勾選的 Checkbox
+            const checkboxes = document.querySelectorAll('.song-select-cb:checked');
+            if (checkboxes.length === 0) {
+                alert("請先勾選要刪除的歌曲！");
+                return;
+            }
+
+            const isAuthorized = await requireLogin();
+            if (!isAuthorized) return;
+
+            // 二次確認
+            if (!confirm(`確定要從雲端永久刪除這 ${checkboxes.length} 首歌曲嗎？`)) return;
+
+            // 取出要刪除的 ID 陣列
+            const idsToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+            try {
+                showToast(`⏳ 正在刪除 ${idsToDelete.length} 首歌曲...`, 1000);
+
+                // 利用 Supabase 的 .in() 語法一次刪除多筆
+                const { error } = await supabaseClient
+                    .from('songs')
+                    .delete()
+                    .in('id', idsToDelete);
+
+                if (error) throw error;
+
+                // 更新前端陣列與畫面
+                songs = songs.filter(s => !idsToDelete.includes(s.id));
+                renderSongGrid();
+                renderEditSongList(); 
+                showToast("🗑️ 批量刪除已完成。");
+            } catch (err) {
+                console.error("批量刪除失敗:", err);
+                alert(`❌ 批量刪除發生錯誤：\n${err.message}`);
+            }
+        }
+
+        // 註：原本的 deleteSong() 保留供未來擴充參考，目前前端介面已改用 checkbox 批量刪除
         async function deleteSong(songId) {
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return;
@@ -651,7 +717,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 (修正：加入條件限制、要求真實 YT 連結)
+        // AI 自動找歌 (修正排到最後面邏輯)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -662,7 +728,6 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 修正：強化 Prompt 提示詞，限制「僅限國語」、「熱度高/排行前100」，並嚴格要求「真實有效的 YT 連結」避免破圖
             const promptText = `請推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的經典或當紅【國語流行歌曲】。
 條件限制：
 1. 語言限制：只能是「國語(中文)」歌曲，⚠️ 絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲。
@@ -697,7 +762,11 @@
                 const newSongs = JSON.parse(textResult);
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
-                    const startOrder = songs.length;
+                    
+                    // 修正：明確抓出目前資料庫中最大的 sort_order，確保新歌一律加在最後面
+                    const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
+                    const startOrder = maxOrder + 1;
+
                     const insertData = newSongs.map((s, i) => {
                         let yID = extractVideoID(s.ytUrl);
                         if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
@@ -706,7 +775,7 @@
                             title: s.title,
                             ytId: yID,
                             lyrics: s.lyrics,
-                            sort_order: startOrder + i
+                            sort_order: startOrder + i // 賦予比現有最大值還大的排序編號
                         };
                     });
 
@@ -1055,6 +1124,7 @@
             if (viewName === 'songs') renderSongGrid();
         }
 
+        // 修正：渲染歌曲卡片時，加入 Checkbox 並移除單一刪除按鈕
         function renderSongGrid() {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
@@ -1069,11 +1139,11 @@
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 card.innerHTML = `
+                    <input type="checkbox" class="song-select-cb" value="${song.id}" title="勾選以批量刪除">
                     <strong>${song.title}</strong>
                     <div class="card-btn-group">
                         <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
                         <button class="edit-song-btn" onclick="editSong(${song.id})" title="編輯歌曲資料">✏️</button>
-                        <button class="delete-song-btn" onclick="deleteSong(${song.id})" title="從雲端刪除">🗑️</button>
                     </div>
                 `;
                 grid.appendChild(card);
