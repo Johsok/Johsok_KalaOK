@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>傑斯克的練歌世界 Johsok's  Karaoke</title>
-    <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         /* =========================================
             極致精美版：全域基礎重置與排版 
@@ -392,7 +392,7 @@
                     </div>
                     <div class="form-group">
                         <label>Youtube 連結：</label>
-                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: [https://www.youtube.com/watch?v=K4DyBUG242c](https://www.youtube.com/watch?v=K4DyBUG242c)">
+                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: https://www.youtube.com/watch?v=K4DyBUG242c">
                     </div>
                     <div class="form-group">
                         <label>歌詞：</label>
@@ -449,17 +449,17 @@
         </div>
     </main>
 
-    <script src="[https://www.youtube.com/iframe_api](https://www.youtube.com/iframe_api)"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
     <script>
         // =========================================
-        // Supabase 初始化設定
+        // 核心全域變數與安全初始化防護網
         // =========================================
-        const supabaseUrl = '[https://doicpmczzvharnszpbsr.supabase.co](https://doicpmczzvharnszpbsr.supabase.co)';
+        const supabaseUrl = 'https://doicpmczzvharnszpbsr.supabase.co';
         const supabaseKey = 'sb_publishable_c46aC5fxRALpXswtxy8aIA_E-LHxIu9';
-        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+        let supabaseClient = null;
 
         let songs = []; 
-        let playlist = JSON.parse(localStorage.getItem('kalaok_playlist')) || [];
+        let playlist = []; 
         let currentPlayIndex = -1;
         let player = null;
 
@@ -469,13 +469,21 @@
 
         let editingSongId = null; 
         
-        // 進度條相關變數
         let isDraggingProgress = false;
         let progressInterval = null;
 
-        // =========================================
+        // 【修正1】安全解析 LocalStorage，避免因資料損毀導致系統全面當機 (卡在"載入中")
+        try {
+            const storedPlaylist = localStorage.getItem('kalaok_playlist');
+            if (storedPlaylist && storedPlaylist !== 'undefined' && storedPlaylist !== 'null') {
+                playlist = JSON.parse(storedPlaylist);
+            }
+        } catch (e) {
+            console.error("本地播放列表解析失敗，已重置", e);
+            localStorage.removeItem('kalaok_playlist');
+        }
+
         // 核心 API 處理工具
-        // =========================================
         const fetchWithRetry = async (url, options, retries = 3) => {
             let delay = 1000;
             for (let i = 0; i < retries; i++) {
@@ -494,8 +502,8 @@
             }
         };
 
-        // 初始化
-        document.addEventListener("DOMContentLoaded", () => {
+        // 【修正2】系統啟動器：確保 DOM 準備好且 Supabase 正常載入後才執行後續動作
+        function initApp() {
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             
             if (isTouchDevice) {
@@ -506,11 +514,35 @@
                     }
                 });
             }
-            
+
+            // 無論有沒有網路，先將基本的 UI 畫出來
+            renderPlaylist();
+            switchView('songs');
+            initProgressBar();
+
+            // 檢查 Supabase 是否成功從 CDN 載入
+            if (typeof window.supabase === 'undefined') {
+                const grid = document.getElementById('song-grid');
+                if (grid) {
+                    grid.innerHTML = '<div style="grid-column: 1 / -1; color:#ff4b2b;">系統錯誤：無法連線至雲端資料庫(Supabase SDK 未載入)。<br>請檢查網路連線或暫時關閉阻擋廣告擴充功能後重新整理。</div>';
+                }
+                return;
+            }
+
+            // 初始化 Supabase Client
+            supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+            // 正式向資料庫要資料
             fetchSongsFromSupabase();
             loadPlaylistFromDB(); 
-            initProgressBar(); // 初始化進度條事件
-        });
+        }
+
+        // 綁定啟動事件
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
 
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
@@ -521,6 +553,7 @@
         // =========================================
         function showToast(msg, duration = 2000) {
             const container = document.getElementById('toast-container');
+            if (!container) return;
             const toast = document.createElement('div');
             toast.className = 'toast';
             toast.innerText = msg;
@@ -539,6 +572,7 @@
         const ADMIN_EMAIL = 'johsok2@yahoo.com.tw'; 
 
         async function requireLogin(forcePrompt = false) {
+            if (!supabaseClient) return false;
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session !== null && !forcePrompt) return true; 
 
@@ -580,6 +614,8 @@
 
         async function fetchSongsFromSupabase() {
             try {
+                if (!supabaseClient) throw new Error("資料庫未正確初始化");
+
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
@@ -593,7 +629,10 @@
                 renderEditSongList(); 
             } catch (err) {
                 console.error("無法從 Supabase 讀取資料:", err);
-                document.getElementById('song-grid').innerHTML = `<p style="color:#ff4b2b;">資料讀取失敗，請確認 Supabase 設定與連線狀態。<br>${err.message}</p>`;
+                const grid = document.getElementById('song-grid');
+                if (grid) {
+                    grid.innerHTML = `<div style="grid-column: 1 / -1; color:#ff4b2b;">資料讀取失敗，請確認 Supabase 設定與連線狀態。<br>${err.message || JSON.stringify(err)}</div>`;
+                }
             }
         }
 
@@ -712,9 +751,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 
-        // 修正重點：移除會導致 Gemini 衝突的 response_mime_type: "application/json"
-        // 依靠 Prompt 與 replace 正規表達式完美解析 JSON
+        // AI 自動找歌
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -749,11 +786,8 @@
                 
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
-                    // 保留 Google 搜尋工具以確保網址真實性
                     tools: [{ googleSearch: {} }],
                     generationConfig: { 
-                        // ⚠️ 關鍵修正：Gemini API 不允許同時使用 googleSearch 與 response_mime_type: "application/json"
-                        // 移除 response_mime_type，確保 API 可以正常執行
                         maxOutputTokens: 8192 
                     },
                     model: modelName
@@ -767,7 +801,6 @@
 
                 let textResult = data.candidates[0].content.parts[0].text;
                 
-                // 強大的防呆機制：自動將 AI 可能包裝的 Markdown JSON 區塊去除，直接轉為純 JSON 字串
                 textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
                 
                 const newSongs = JSON.parse(textResult);
@@ -927,12 +960,16 @@
 
         async function loadPlaylistFromDB() {
             try {
+                if (!supabaseClient) return;
+
                 const { data, error } = await supabaseClient
                     .from('saved_playlist')
                     .select('*')
                     .order('sort_order', { ascending: true });
                 
-                if (!error && data && data.length > 0) {
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
                     playlist = data;
                     localStorage.setItem('kalaok_playlist', JSON.stringify(playlist)); 
                     renderPlaylist();
@@ -951,6 +988,8 @@
             const progressBar = document.getElementById('yt-progress-bar');
             const currentTimeDisplay = document.getElementById('yt-current-time');
             
+            if (!progressBar || !currentTimeDisplay) return;
+
             progressBar.addEventListener('input', () => {
                 isDraggingProgress = true;
                 if (player && typeof player.getDuration === 'function') {
@@ -997,8 +1036,15 @@
             return videoID;
         }
 
+        // 【修正3】加入 YouTube 播放器載入防呆機制
         function playSong(index) {
             if (index < 0 || index >= playlist.length) return;
+
+            if (typeof YT === 'undefined' || !YT.Player) {
+                showToast("⚠️ YouTube 播放器尚未準備好，請稍等一秒再試...", 3000);
+                return;
+            }
+
             currentPlayIndex = index;
             const song = playlist[index];
             
@@ -1308,9 +1354,6 @@
             renderPlaylist();
             updateLyricsView();
         }
-
-        renderPlaylist();
-        switchView('songs');
     </script>
 </body>
 </html>
