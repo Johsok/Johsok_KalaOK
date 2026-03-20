@@ -201,6 +201,24 @@
         .controls { display: flex; padding: 15px 10px 5px 10px; gap: 8px; justify-content: space-around; flex-wrap: wrap; }
         .loop-controls { padding: 5px 10px 15px 10px; border-top: 1px dashed rgba(255,255,255,0.05); }
         
+        /* 新增：進度條區塊 CSS */
+        .progress-controls {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.3);
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        #yt-progress-bar {
+            -webkit-appearance: none; width: 100%; height: 5px; border-radius: 3px;
+            background: rgba(255,255,255,0.2); outline: none; cursor: pointer;
+        }
+        #yt-progress-bar::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #00f2fe; cursor: pointer; transition: transform 0.1s;
+        }
+        #yt-progress-bar::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
         .btn-control { 
             flex: 1; height: 45px; min-width: 40px;
             background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; 
@@ -412,6 +430,11 @@
                     <button class="btn-control btn-loop" id="btn-loop-end" onclick="setLoopEnd()" title="設定循環終點">結束<br><span>--:--</span></button>
                     <button class="btn-control btn-loop" onclick="clearLoop()" title="清除循環設定">✖<br><span>清除</span></button>
                 </div>
+                <div class="progress-controls">
+                    <span id="yt-current-time" style="font-size: 12px; color: #4facfe; font-family: monospace;">00:00</span>
+                    <input type="range" id="yt-progress-bar" min="0" max="100" value="0" step="0.1" title="拖曳以調整播放進度">
+                    <span id="yt-duration" style="font-size: 12px; color: #ccc; font-family: monospace;">00:00</span>
+                </div>
             </div>
             <div class="playlist-area">
                 <div class="playlist-header">
@@ -445,6 +468,10 @@
         let loopInterval = null;
 
         let editingSongId = null; 
+        
+        // 進度條相關變數
+        let isDraggingProgress = false;
+        let progressInterval = null;
 
         // =========================================
         // 核心 API 處理工具
@@ -482,6 +509,7 @@
             
             fetchSongsFromSupabase();
             loadPlaylistFromDB(); 
+            initProgressBar(); // 初始化進度條事件
         });
 
         function onYouTubeIframeAPIReady() {
@@ -684,7 +712,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 (深度優化：連網搜尋、防截斷、純國語、排最後)
+        // AI 自動找歌 (加入舊歌自動修復排序機制)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -695,7 +723,6 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 強化提示詞：強調網址真實性、歌詞完整性、嚴格的語言限制
             const promptText = `請扮演專業的 KTV DJ，推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制（若違反將導致系統崩潰）：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
@@ -716,11 +743,10 @@
                 
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
-                    // 啟用 Google 搜尋工具，讓 AI 找真實網址與完整歌詞
                     tools: [{ googleSearch: {} }],
                     generationConfig: { 
                         response_mime_type: "application/json",
-                        maxOutputTokens: 8192 // 確保 20 首歌的歌詞不會因為 token 不足被截斷
+                        maxOutputTokens: 8192 
                     },
                     model: modelName
                 };
@@ -738,9 +764,22 @@
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
                     
-                    // 確保新歌排在資料庫最尾端
-                    const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
-                    const startOrder = maxOrder + 1;
+                    // 💡核心修正：在寫入新歌前，先自動修復現有舊歌的排序！
+                    // 這能保證舊歌不會因為 sort_order 是 null 而被 Supabase 丟到最後面
+                    if (songs.length > 0) {
+                        const fixPromises = songs.map((s, idx) => {
+                            // 只要舊歌目前的順序和陣列索引不符，就強制寫入正確的數字
+                            if (s.sort_order !== idx) {
+                                return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id);
+                            }
+                            return null;
+                        }).filter(p => p !== null);
+                        
+                        if (fixPromises.length > 0) await Promise.all(fixPromises);
+                    }
+
+                    // 因為前面已修復排序，新歌只要從 songs.length 開始依序往下加即可
+                    const startOrder = songs.length;
 
                     const insertData = newSongs.map((s, i) => {
                         let yID = extractVideoID(s.ytUrl);
@@ -750,7 +789,7 @@
                             title: s.title,
                             ytId: yID,
                             lyrics: s.lyrics,
-                            sort_order: startOrder + i 
+                            sort_order: startOrder + i // 賦予絕對大於舊歌的新編號
                         };
                     });
 
@@ -899,8 +938,48 @@
         }
 
         // =========================================
-        // 播放與介面邏輯
+        // 播放、進度條與介面邏輯
         // =========================================
+
+        // 新增：初始化進度拉桿事件綁定
+        function initProgressBar() {
+            const progressBar = document.getElementById('yt-progress-bar');
+            const currentTimeDisplay = document.getElementById('yt-current-time');
+            
+            // 當拖曳拉桿時，暫停定時器更新，並只更新時間顯示，避免畫面閃爍
+            progressBar.addEventListener('input', () => {
+                isDraggingProgress = true;
+                if (player && typeof player.getDuration === 'function') {
+                    const duration = player.getDuration();
+                    const seekToTime = (progressBar.value / 100) * duration;
+                    currentTimeDisplay.innerText = formatTime(seekToTime);
+                }
+            });
+
+            // 放開拉桿的瞬間，才讓 YouTube 真正跳轉過去
+            progressBar.addEventListener('change', () => {
+                if (player && typeof player.getDuration === 'function') {
+                    const duration = player.getDuration();
+                    const seekToTime = (progressBar.value / 100) * duration;
+                    player.seekTo(seekToTime, true);
+                }
+                isDraggingProgress = false;
+            });
+
+            // 啟動定時器，每 0.5 秒更新一次進度條
+            if (progressInterval) clearInterval(progressInterval);
+            progressInterval = setInterval(() => {
+                if (player && typeof player.getCurrentTime === 'function' && !isDraggingProgress) {
+                    const currentTime = player.getCurrentTime();
+                    const duration = player.getDuration();
+                    if (duration > 0) {
+                        progressBar.value = (currentTime / duration) * 100;
+                        currentTimeDisplay.innerText = formatTime(currentTime);
+                        document.getElementById('yt-duration').innerText = formatTime(duration);
+                    }
+                }
+            }, 500);
+        }
 
         function extractVideoID(url) {
             let videoID = "";
@@ -973,6 +1052,11 @@
             }
             document.getElementById('youtube-container').innerHTML = '<div id="yt-player-placeholder" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>';
             player = null; 
+            
+            // 重置進度條 UI
+            document.getElementById('yt-progress-bar').value = 0;
+            document.getElementById('yt-current-time').innerText = "00:00";
+            document.getElementById('yt-duration').innerText = "00:00";
 
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
             renderPlaylist();
@@ -991,10 +1075,10 @@
         }
 
         function formatTime(seconds) {
-            if (seconds === null || seconds === undefined) return "--:--";
+            if (seconds === null || seconds === undefined || isNaN(seconds)) return "00:00";
             const m = Math.floor(seconds / 60);
             const s = Math.floor(seconds % 60);
-            return `${m}:${s < 10 ? '0' : ''}${s}`;
+            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
         }
 
         function setLoopStart() {
