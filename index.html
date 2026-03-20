@@ -46,12 +46,13 @@
             background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); 
             color: #fff; border: none; box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4); 
         }
+        
         /* AI 自動新增按鈕特殊樣式 */
         .btn-ai-add {
             background: linear-gradient(90deg, #8E2DE2 0%, #4A00E0 100%) !important;
             color: #fff !important; border: none !important;
         }
-        .btn-ai-add:hover { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; }
+        .btn-ai-add:hover { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
         main { display: flex; flex: 1; gap: 20px; overflow: hidden; }
         
@@ -315,8 +316,7 @@
             <button onclick="switchView('songs')" class="active">歌曲列表</button>
             <button id="btn-toggle-lyrics" onclick="toggleLyrics()" title="進歌詞">看歌詞</button>
             <button onclick="switchView('edit')">新增與編輯</button>
-            <button onclick="autoAddSongs()" class="btn-ai-add" title="呼叫 Gemini 自動找歌入庫">✨自動新增</button>
-        </div>
+            </div>
     </header>
 
     <main>
@@ -324,7 +324,10 @@
             <button id="btn-exit-fs" onclick="toggleCustomFullscreen()">回上頁 ✖</button>
 
             <div id="view-songs" class="view-section active">
-                <h3 style="color: #4facfe; margin-top:0;">歌曲庫</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="color: #4facfe; margin:0;">歌曲庫</h3>
+                    <button onclick="autoAddSongs()" class="btn-ai-add" style="padding: 6px 15px; font-size: 13px; border-radius: 20px; cursor: pointer;" title="呼叫 Gemini 自動找歌入庫">✨AI自動新增</button>
+                </div>
                 <div id="song-grid">載入中...</div>
             </div>
 
@@ -424,22 +427,13 @@
 
         let editingSongId = null; // 紀錄目前正在編輯的歌曲 ID
 
-        // 偵測 iOS 設備隱藏音量按鈕，並執行初始化
+        // 初始化
         document.addEventListener("DOMContentLoaded", () => {
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            const isIOS = [
-                'iPad Simulator', 'iPhone Simulator', 'iPod Simulator',
-                'iPad', 'iPhone', 'iPod'
-            ].includes(navigator.platform) || 
-            (navigator.userAgent.includes("Mac") && isTouchDevice); 
             
-            if (isIOS) {
-                document.querySelectorAll('.btn-vol').forEach(btn => {
-                    btn.style.display = 'none';
-                });
-            }
-
-            // 新增：針對 iOS / 觸控螢幕的全局按鈕提示優化
+            // 💡 修正：已移除隱藏音量按鈕的邏輯，讓手機版依然可以顯示音量按鈕並控制 YouTube 內部音量。
+            
+            // 針對 iOS / 觸控螢幕的全局按鈕提示優化
             // 當點擊帶有 title 屬性的按鈕時，主動彈出提示氣泡
             if (isTouchDevice) {
                 document.addEventListener('click', function(e) {
@@ -669,7 +663,7 @@
                     })
                 });
 
-                // 修正：強化錯誤捕捉，如果失敗會直接把 Google 的錯誤訊息印出來
+                // 強化錯誤捕捉，如果失敗會直接把 Google 的錯誤訊息印出來
                 if (!response.ok) {
                     const errorData = await response.json();
                     const realError = errorData.error?.message || response.statusText;
@@ -705,7 +699,7 @@
                 console.error(err);
                 alert(`❌ 自動新增發生錯誤：\n${err.message}`);
                 // 如果是 API 問題 (例如 API key not valid)，清除錯誤的 Key 讓使用者重輸
-                if (err.message.includes("API key not valid") || err.message.includes("API Key")) {
+                if (err.message.includes("API key not valid") || err.message.includes("API Key") || err.message.includes("Google 端")) {
                     localStorage.removeItem('gemini_api_key');
                 }
             } finally {
