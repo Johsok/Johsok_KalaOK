@@ -104,7 +104,7 @@
             visibility: visible; opacity: 1; z-index: 1; pointer-events: auto; transform: scale(1);
         }
 
-        /* 修正：將音樂卡片與 UI 做小一點 */
+        /* 音樂卡片與 UI */
         #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
         .song-card { 
             padding: 12px 10px; text-align: center; 
@@ -130,7 +130,7 @@
         .delete-song-btn { background: rgba(255,75,43,0.1); color: #ff4b2b; }
         .delete-song-btn:hover { background: #ff4b2b; color: #fff; box-shadow: 0 0 10px #ff4b2b; transform: scale(1.1); }
         
-        /* 新增：編輯歌曲按鈕 */
+        /* 編輯歌曲按鈕 */
         .edit-song-btn { background: rgba(255, 193, 7, 0.1); color: #ffc107; }
         .edit-song-btn:hover { background: #ffc107; color: #000; box-shadow: 0 0 10px #ffc107; transform: scale(1.1); }
 
@@ -210,7 +210,7 @@
 
         .playlist-area { padding: 15px; flex: 1; overflow-y: auto; display: flex; flex-direction: column;}
         
-        /* 播放列表 Header 更新設計 */
+        /* 播放列表 Header 設計 */
         .playlist-header {
             display: flex; justify-content: space-between; align-items: center; 
             border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 10px;
@@ -255,6 +255,20 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
+        /* 新增：自訂 Toast 氣泡提示樣式 */
+        #toast-container {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 100001; display: flex; flex-direction: column; gap: 10px;
+            pointer-events: none;
+        }
+        .toast {
+            background: rgba(20, 30, 40, 0.95); color: #fff; padding: 12px 24px;
+            border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid rgba(79, 172, 254, 0.5); text-align: center; font-weight: bold;
+            opacity: 1; transition: opacity 0.5s ease, transform 0.5s ease;
+            transform: translateY(0);
+        }
+
         /* RWD 響應式設計 (手機與平板完美適配) */
         @media (max-width: 900px) {
             body { height: auto; overflow: auto; padding: 10px; }
@@ -283,6 +297,8 @@
     </style>
 </head>
 <body>
+
+    <div id="toast-container"></div>
 
     <div id="ai-loading-overlay">
         <div class="spinner"></div>
@@ -422,14 +438,31 @@
                 });
             }
             
-            // 網頁載入時從 Supabase 抓取歌曲，並嘗試載入雲端播放列表
+            // 網頁載入時從 Supabase 抓取歌曲，並強制嘗試載入雲端播放列表
             fetchSongsFromSupabase();
             loadPlaylistFromDB(); 
         });
 
         function onYouTubeIframeAPIReady() {
             console.log("YouTube API 已準備就緒");
-            // RWD 自動播放優化：不在此立刻初始化，而是等到第一次 playSong 時再 init
+        }
+
+        // =========================================
+        // 新增：2 秒自動消失的氣泡提示 (Toast)
+        // =========================================
+        function showToast(msg, duration = 2000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerText = msg;
+            container.appendChild(toast);
+
+            // 進入動畫後，2秒自動淡出並移除
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-20px)';
+                setTimeout(() => toast.remove(), 500); // 等待淡出動畫結束再移除 DOM
+            }, duration);
         }
 
         // =========================================
@@ -437,20 +470,17 @@
         // =========================================
         const ADMIN_EMAIL = 'johsok2@yahoo.com.tw'; 
 
-        // 修改：利用 localStorage 儲存並自動填入密碼
         async function requireLogin(forcePrompt = false) {
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session !== null && !forcePrompt) return true; // 已有 Session，直接放行
 
             let pwd = localStorage.getItem('supabase_admin_pwd');
             
-            // 如果沒有記憶密碼，或是登入失敗被強制要求重輸
             if (!pwd || forcePrompt) {
                 pwd = prompt("此操作需要管理員權限。\n請輸入您的密碼：");
                 if (!pwd) return false;
             }
 
-            // 向 Supabase 發送登入請求
             const { error } = await supabaseClient.auth.signInWithPassword({
                 email: ADMIN_EMAIL,
                 password: pwd
@@ -466,7 +496,6 @@
             }
         }
 
-        // 獲取並記憶 Gemini API Key
         async function getGeminiApiKey(forcePrompt = false) {
             let key = localStorage.getItem('gemini_api_key');
             if (!key || forcePrompt) {
@@ -481,27 +510,25 @@
         // Supabase 資料庫操作區塊
         // =========================================
 
-        // 讀取歌曲庫 (所有人皆可讀取，受 RLS 政策 1 保護)
         async function fetchSongsFromSupabase() {
             try {
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
-                    .order('sort_order', { ascending: true, nullsFirst: false }) // 優先依照排序欄位
-                    .order('id', { ascending: false }); // 如果沒設定過排序，依照 ID 遞減排序(新歌在前面)
+                    .order('sort_order', { ascending: true, nullsFirst: false })
+                    .order('id', { ascending: false }); 
 
                 if (error) throw error;
                 
                 songs = data || [];
                 renderSongGrid();
-                renderEditSongList(); // 重新渲染編輯區的拖拉清單
+                renderEditSongList(); 
             } catch (err) {
                 console.error("無法從 Supabase 讀取資料:", err);
                 document.getElementById('song-grid').innerHTML = `<p style="color:#ff4b2b;">資料讀取失敗，請確認 Supabase 設定與連線狀態。<br>${err.message}</p>`;
             }
         }
 
-        // 修改：整合新增與編輯更新的功能
         async function saveSong() {
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return; 
@@ -517,17 +544,15 @@
 
             try {
                 if (editingSongId) {
-                    // 更新現有歌曲
                     const { error } = await supabaseClient
                         .from('songs')
                         .update({ title: title, ytId: ytId, lyrics: lyrics })
                         .eq('id', editingSongId);
 
                     if (error) throw error;
-                    alert("✅ 歌曲資料已成功更新！");
-                    cancelEdit(); // 恢復新增模式
+                    showToast("✅ 歌曲資料已成功更新！");
+                    cancelEdit(); // 恢復新增模式並自動切換回歌曲庫
                 } else {
-                    // 新增歌曲
                     const newSong = { 
                         id: Date.now(), title: title, ytId: ytId, lyrics: lyrics,
                         sort_order: songs.length 
@@ -538,10 +563,9 @@
                     document.getElementById('edit-title').value = '';
                     document.getElementById('edit-yt').value = '';
                     document.getElementById('edit-lyrics').value = '';
-                    alert("🎉 歌曲已成功新增至 Supabase 雲端資料庫！");
+                    showToast("🎉 歌曲已成功新增至 Supabase 雲端資料庫！");
                 }
                 
-                // 重新載入列表
                 await fetchSongsFromSupabase();
                 switchView('songs'); 
                 
@@ -551,7 +575,6 @@
             }
         }
 
-        // 新增：帶入資料進入編輯模式
         function editSong(id) {
             const song = songs.find(s => s.id === id);
             if (!song) return;
@@ -561,7 +584,6 @@
             document.getElementById('edit-yt').value = `https://www.youtube.com/watch?v=${song.ytId}`;
             document.getElementById('edit-lyrics').value = song.lyrics || "";
             
-            // 變更介面文字提示為編輯狀態
             document.getElementById('form-mode-title').innerText = "編輯歌曲";
             document.getElementById('btn-save-song').innerText = "更新至雲端 (Supabase)";
             document.getElementById('btn-cancel-edit').style.display = 'inline-block';
@@ -569,7 +591,7 @@
             switchView('edit');
         }
 
-        // 新增：取消編輯，還原為新增模式
+        // 修正：取消編輯後自動切回歌曲庫
         function cancelEdit() {
             editingSongId = null;
             document.getElementById('edit-title').value = '';
@@ -579,9 +601,10 @@
             document.getElementById('form-mode-title').innerText = "新增歌曲";
             document.getElementById('btn-save-song').innerText = "新增至雲端 (Supabase)";
             document.getElementById('btn-cancel-edit').style.display = 'none';
+            
+            switchView('songs'); // 自動切回歌曲庫畫面
         }
 
-        // 從 Supabase 刪除歌曲
         async function deleteSong(songId) {
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return;
@@ -595,7 +618,7 @@
                 songs = songs.filter(s => s.id !== songId);
                 renderSongGrid();
                 renderEditSongList(); 
-                alert("🗑️ 歌曲已從雲端刪除。");
+                showToast("🗑️ 歌曲已從雲端刪除。");
             } catch (err) {
                 console.error("刪除失敗:", err);
                 alert(`❌ 刪除發生錯誤：\n${err.message}`);
@@ -613,7 +636,6 @@
             if (!apiKey) return;
 
             const currentTitles = songs.map(s => s.title).join(", ");
-            // 系統提示設定，嚴格要求回傳 JSON 格式
             const promptText = `你是一個KTV歌曲推薦助手。請隨機推薦20首台灣熱門或經典的國語/台語流行歌曲。
 條件：
 1. 絕對不能與以下歌曲重複：${currentTitles}
@@ -633,7 +655,6 @@
 ]`;
 
             try {
-                // 顯示讀取動畫
                 document.getElementById('ai-loading-overlay').style.display = 'flex';
 
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
@@ -641,7 +662,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: promptText }] }],
-                        generationConfig: { response_mime_type: "application/json" } // 強制返回 JSON
+                        generationConfig: { response_mime_type: "application/json" }
                     })
                 });
 
@@ -653,14 +674,13 @@
                 let textResult = data.candidates[0].content.parts[0].text;
                 const newSongs = JSON.parse(textResult);
 
-                // 將取得的歌曲寫入資料庫
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
                     const startOrder = songs.length;
                     const insertData = newSongs.map((s, i) => {
                         let yID = extractVideoID(s.ytUrl);
-                        if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; // 避免 ID 無效導致播放壞掉的防呆機制
+                        if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
                         return {
-                            id: Date.now() + i, // 產生唯一ID
+                            id: Date.now() + i, 
                             title: s.title,
                             ytId: yID,
                             lyrics: s.lyrics,
@@ -671,19 +691,17 @@
                     const { error } = await supabaseClient.from('songs').insert(insertData);
                     if (error) throw error;
 
-                    alert(`🎉 AI 任務完成！成功自動新增了 ${insertData.length} 首歌曲！`);
-                    await fetchSongsFromSupabase(); // 重新載入歌曲庫
+                    showToast(`🎉 AI 任務完成！成功自動新增了 ${insertData.length} 首歌曲！`);
+                    await fetchSongsFromSupabase(); 
                 }
 
             } catch (err) {
                 console.error(err);
                 alert(`❌ 自動新增發生錯誤：\n${err.message}`);
-                // 如果是 API 問題，清除錯誤的 Key 讓使用者重輸
                 if (err.message.includes("API Key") || err.message.includes("JSON")) {
                     localStorage.removeItem('gemini_api_key');
                 }
             } finally {
-                // 關閉讀取動畫
                 document.getElementById('ai-loading-overlay').style.display = 'none';
             }
         }
@@ -755,7 +773,7 @@
                     return supabaseClient.from('songs').update({ sort_order: index }).eq('id', song.id); 
                 });
                 await Promise.all(updatePromises);
-                alert("✅ 歌曲排序已成功更新至 Supabase！");
+                showToast("✅ 歌曲排序已成功更新至 Supabase！");
             } catch (err) {
                 console.error("更新排序失敗:", err);
                 alert(`❌ 儲存排序時發生錯誤：\n${err.message}`);
@@ -763,37 +781,36 @@
         }
 
         // =========================================
-        // 播放列表的雲端儲存與讀取 (修正需求 1)
+        // 播放列表的雲端儲存與讀取
         // =========================================
 
-        // 修改：主動觸發的儲存播放列表按鈕
         async function savePlaylistToDB() {
             const isAuthorized = await requireLogin();
             if (!isAuthorized) return;
 
             try {
-                // 為了避免主鍵衝突，先清空舊的資料
                 await supabaseClient.from('saved_playlist').delete().neq('id', 0); 
                 
                 const insertData = playlist.map((song, index) => ({
-                    id: Date.now() + index, // 隨機產生不重複ID
+                    id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
                     sort_order: index,
-                    lyrics: song.lyrics // 一併存入確保播放正常
+                    lyrics: song.lyrics 
                 }));
 
                 if (insertData.length > 0) {
                     await supabaseClient.from('saved_playlist').insert(insertData);
                 }
-                alert("✅ 播放列表已成功儲存至雲端！下次開啟將自動載入。");
+                showToast("✅ 播放列表已成功儲存至雲端！下次開啟將自動載入。");
             } catch (e) {
                 console.warn("⚠️ 同步播放列表失敗", e);
                 alert("❌ 儲存失敗，請確保 Supabase 已建立 'saved_playlist' 資料表且具備對應欄位 (id, ytId, title, lyrics, sort_order)。");
             }
         }
 
-        // 新增：開啟網頁時自動從資料庫載入列表
+        // 修正：無論一般或無痕視窗，開啟時皆強制從雲端拉取播放清單
+        // 注意：請確保你的 Supabase `saved_playlist` 資料表 RLS 政策有開放「允許所有人讀取(SELECT)」
         async function loadPlaylistFromDB() {
             try {
                 const { data, error } = await supabaseClient
@@ -803,8 +820,9 @@
                 
                 if (!error && data && data.length > 0) {
                     playlist = data;
-                    localStorage.setItem('kalaok_playlist', JSON.stringify(playlist)); // 同步到本地
+                    localStorage.setItem('kalaok_playlist', JSON.stringify(playlist)); // 更新本地紀錄
                     renderPlaylist();
+                    showToast("☁️ 已成功從雲端資料庫載入您的播放列表");
                 }
             } catch(e) {
                 console.warn("無法從雲端載入播放列表，目前使用本地紀錄", e);
@@ -875,7 +893,6 @@
             }
         }
 
-        // 清空播放列表 (修改自工具列呼叫與列表區塊共用)
         function clearPlaylist() {
             if (playlist.length === 0) return;
             if (!confirm("確定要清空整個播放列表嗎？")) return;
@@ -889,10 +906,9 @@
             player = null; 
 
             localStorage.setItem('kalaok_playlist', JSON.stringify(playlist));
-            // 如果希望清空的同時也刪除雲端紀錄，可解開底下註解 (這會呼叫密碼驗證)
-            // supabaseClient.from('saved_playlist').delete().neq('id', 0); 
             renderPlaylist();
             updateLyricsView();
+            showToast("🗑️ 播放列表已清空。");
         }
 
         function adjustVolume(change) {
@@ -1014,7 +1030,6 @@
             if (viewName === 'songs') renderSongGrid();
         }
 
-        // 修正：加入歌曲編輯按鈕的渲染
         function renderSongGrid() {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
@@ -1123,6 +1138,7 @@
                 playlist.push(song);
                 localStorage.setItem('kalaok_playlist', JSON.stringify(playlist)); 
                 renderPlaylist();
+                showToast(`已將「${song.title}」加入播放列表`);
             }
         }
 
