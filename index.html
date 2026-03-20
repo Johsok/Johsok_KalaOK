@@ -617,7 +617,6 @@
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
-                    // 修正 1：嚴格依照資料庫的 sort_order 進行排序抓取
                     .order('sort_order', { ascending: true, nullsFirst: false })
                     .order('id', { ascending: true }); 
 
@@ -660,24 +659,12 @@
                     if (error) throw error;
                     showToast("✅ 歌曲資料已成功更新！");
                     cancelEdit(); 
-                    } else {
-                    // 1. 先自動修復現有舊歌的排序 (把空白變成真實數字)，確保排序基底 100% 正確
-                    if (songs.length > 0) {
-                        const fixPromises = songs.map((s, idx) => {
-                            if (s.sort_order !== idx) {
-                                return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id);
-                            }
-                            return null;
-                        }).filter(p => p !== null);
-                        if (fixPromises.length > 0) await Promise.all(fixPromises);
-                    }
-
-                    // 2. 因為舊歌排序已被修復，新歌的排序編號直接使用目前陣列的總長度，絕對排在最後面！
-                    const startOrder = songs.length;
+                } else {
+                    const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
                     const newSong = { 
                         id: Date.now(), title: title, ytId: ytId, lyrics: lyrics,
-                        sort_order: startOrder 
+                        sort_order: maxOrder + 1 
                     };
                     const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
@@ -764,7 +751,7 @@
         }
 
         // =========================================
-        // AI 自動找歌
+        // AI 自動找歌 (強化防護網版本)
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -775,19 +762,21 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
+            // 加入極度嚴格的格式警告，防範 AI 產生不合法 JSON 導致解析失敗崩潰
             const promptText = `請扮演專業的 KTV DJ，推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制（若違反將導致系統崩潰）：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
 2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！請透過 Google Search 確保該網址能真實連上。
-3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。絕對不可因為字數長就使用「略」、「...」等省略符號截斷歌詞。
+3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。
 4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
+5. ⚠️ JSON 格式極度嚴格要求：歌詞中的換行【必須】使用「\\n」字元代替，絕對不可以在 JSON 內直接換行！歌詞或歌名中若有雙引號 (")，請務必改用單引號 (') 或予以跳脫 (\\")，否則會導致 JSON 解析失敗！
 
-必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 或對話文字。包含欄位：
+必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 或對話文字。格式範例：
 [
   {
     "title": "歌曲名稱(含歌手)",
     "ytUrl": "真實有效的 YouTube 網址",
-    "lyrics": "完整無刪減的歌詞"
+    "lyrics": "第一行歌詞\\n第二行歌詞\\n第三行歌詞..."
   }
 ]`;
 
@@ -800,9 +789,7 @@
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
                     tools: [{ googleSearch: {} }],
-                    generationConfig: { 
-                        maxOutputTokens: 8192 
-                    },
+                    generationConfig: { maxOutputTokens: 8192 },
                     model: modelName
                 };
 
@@ -813,10 +800,16 @@
                 });
 
                 let textResult = data.candidates[0].content.parts[0].text;
-                
                 textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
                 
-                const newSongs = JSON.parse(textResult);
+                let newSongs;
+                // 新增：防呆解析保護網，如果 AI 格式錯誤不會全網頁當機
+                try {
+                    newSongs = JSON.parse(textResult);
+                } catch (parseErr) {
+                    console.error("【JSON 解析失敗】AI 回傳的原始文字如下：\n", textResult);
+                    throw new Error("AI 產生的格式發生異常 (通常是歌詞中包含了未跳脫的引號或換行)。請再點擊一次「自動新增」重新生成！");
+                }
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
                     
@@ -868,29 +861,24 @@
         // =========================================
         let dragSrcEl = null;
 
-        // 修正 3：僅在歌曲庫畫面進行本地依筆劃排序 (不寫入資料庫)
         function sortLibraryByStrokes() {
             if (songs.length === 0) return;
-            // 複製陣列進行排序，避免更動到原始 songs 陣列的順序
             const sortedSongs = [...songs].sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
             renderSongGrid(sortedSongs);
             showToast("🔠 歌曲庫已依筆劃排序顯示 (僅變更顯示，未存入資料庫)");
         }
 
-        // 修正 4：在編輯區正式依照筆劃排序，並重新賦予排序號碼準備存檔
         function sortEditListByStrokes() {
             if (songs.length === 0) return;
             
-            // 改變實際的 songs 陣列
             songs.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
             
-            // 將陣列索引覆蓋回 sort_order 屬性 (本地暫存)
             songs.forEach((song, index) => {
                 song.sort_order = index;
             });
 
             renderEditSongList(); 
-            renderSongGrid(); // 同步更新前方顯示
+            renderSongGrid(); 
             showToast("🔠 已依筆劃排序！請點擊右方「💾 儲存排序」正式寫入資料庫。");
         }
 
@@ -1265,11 +1253,9 @@
                 if(activeBtn) activeBtn.classList.add('active');
             }
 
-            // 切換畫面時，預設顯示原本資料庫排序的歌單
-            if (viewName === 'songs') renderSongGrid();
+            if (viewName === 'songs') renderSongGrid(songs);
         }
 
-        // 修改 renderSongGrid 接受自訂陣列，讓畫面可以暫時顯示依筆劃排序
         function renderSongGrid(displaySongs = songs) {
             const grid = document.getElementById('song-grid');
             if(!grid) return;
