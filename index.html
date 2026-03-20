@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>傑斯克的練歌世界 Johsok's  Karaoke</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
     <style>
         /* =========================================
             極致精美版：全域基礎重置與排版 
@@ -201,7 +201,7 @@
         .controls { display: flex; padding: 15px 10px 5px 10px; gap: 8px; justify-content: space-around; flex-wrap: wrap; }
         .loop-controls { padding: 5px 10px 15px 10px; border-top: 1px dashed rgba(255,255,255,0.05); }
         
-        /* 新增：進度條區塊 CSS */
+        /* YouTube 播放進度拉桿 CSS */
         .progress-controls {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 15px;
@@ -392,7 +392,7 @@
                     </div>
                     <div class="form-group">
                         <label>Youtube 連結：</label>
-                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: https://www.youtube.com/watch?v=K4DyBUG242c">
+                        <input type="text" id="edit-yt" placeholder="請貼上標準網址，例如: [https://www.youtube.com/watch?v=K4DyBUG242c](https://www.youtube.com/watch?v=K4DyBUG242c)">
                     </div>
                     <div class="form-group">
                         <label>歌詞：</label>
@@ -449,12 +449,12 @@
         </div>
     </main>
 
-    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="[https://www.youtube.com/iframe_api](https://www.youtube.com/iframe_api)"></script>
     <script>
         // =========================================
         // Supabase 初始化設定
         // =========================================
-        const supabaseUrl = 'https://doicpmczzvharnszpbsr.supabase.co';
+        const supabaseUrl = '[https://doicpmczzvharnszpbsr.supabase.co](https://doicpmczzvharnszpbsr.supabase.co)';
         const supabaseKey = 'sb_publishable_c46aC5fxRALpXswtxy8aIA_E-LHxIu9';
         const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
@@ -712,7 +712,9 @@
         }
 
         // =========================================
-        // AI 自動找歌 (加入舊歌自動修復排序機制)
+        // AI 自動找歌 
+        // 修正重點：移除會導致 Gemini 衝突的 response_mime_type: "application/json"
+        // 依靠 Prompt 與 replace 正規表達式完美解析 JSON
         // =========================================
         async function autoAddSongs() {
             const isAuthorized = await requireLogin();
@@ -726,14 +728,18 @@
             const promptText = `請扮演專業的 KTV DJ，推薦 20 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制（若違反將導致系統崩潰）：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
-2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！請確保該網址能真實連上。
+2. 真實連結："ytUrl" 必須是【真實存在、可播放】的 YouTube 官方 MV 或高畫質音檔網址，絕對不可隨機捏造假的影片 ID！請透過 Google Search 確保該網址能真實連上。
 3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。絕對不可因為字數長就使用「略」、「...」等省略符號截斷歌詞。
 4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
 
-必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 文字。包含欄位：
-- "title": 歌曲名稱(含歌手，例如 "周杰倫 - 擱淺")
-- "ytUrl": 真實有效的 YouTube 網址
-- "lyrics": 完整無刪減的歌詞`;
+必須只回傳嚴格的 JSON 陣列格式，無任何其他 Markdown 或對話文字。包含欄位：
+[
+  {
+    "title": "歌曲名稱(含歌手)",
+    "ytUrl": "真實有效的 YouTube 網址",
+    "lyrics": "完整無刪減的歌詞"
+  }
+]`;
 
             try {
                 document.getElementById('ai-loading-overlay').style.display = 'flex';
@@ -743,9 +749,11 @@
                 
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
+                    // 保留 Google 搜尋工具以確保網址真實性
                     tools: [{ googleSearch: {} }],
                     generationConfig: { 
-                        response_mime_type: "application/json",
+                        // ⚠️ 關鍵修正：Gemini API 不允許同時使用 googleSearch 與 response_mime_type: "application/json"
+                        // 移除 response_mime_type，確保 API 可以正常執行
                         maxOutputTokens: 8192 
                     },
                     model: modelName
@@ -758,17 +766,16 @@
                 });
 
                 let textResult = data.candidates[0].content.parts[0].text;
+                
+                // 強大的防呆機制：自動將 AI 可能包裝的 Markdown JSON 區塊去除，直接轉為純 JSON 字串
                 textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
                 
                 const newSongs = JSON.parse(textResult);
 
                 if (Array.isArray(newSongs) && newSongs.length > 0) {
                     
-                    // 💡核心修正：在寫入新歌前，先自動修復現有舊歌的排序！
-                    // 這能保證舊歌不會因為 sort_order 是 null 而被 Supabase 丟到最後面
                     if (songs.length > 0) {
                         const fixPromises = songs.map((s, idx) => {
-                            // 只要舊歌目前的順序和陣列索引不符，就強制寫入正確的數字
                             if (s.sort_order !== idx) {
                                 return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id);
                             }
@@ -778,7 +785,6 @@
                         if (fixPromises.length > 0) await Promise.all(fixPromises);
                     }
 
-                    // 因為前面已修復排序，新歌只要從 songs.length 開始依序往下加即可
                     const startOrder = songs.length;
 
                     const insertData = newSongs.map((s, i) => {
@@ -789,7 +795,7 @@
                             title: s.title,
                             ytId: yID,
                             lyrics: s.lyrics,
-                            sort_order: startOrder + i // 賦予絕對大於舊歌的新編號
+                            sort_order: startOrder + i 
                         };
                     });
 
@@ -941,12 +947,10 @@
         // 播放、進度條與介面邏輯
         // =========================================
 
-        // 新增：初始化進度拉桿事件綁定
         function initProgressBar() {
             const progressBar = document.getElementById('yt-progress-bar');
             const currentTimeDisplay = document.getElementById('yt-current-time');
             
-            // 當拖曳拉桿時，暫停定時器更新，並只更新時間顯示，避免畫面閃爍
             progressBar.addEventListener('input', () => {
                 isDraggingProgress = true;
                 if (player && typeof player.getDuration === 'function') {
@@ -956,7 +960,6 @@
                 }
             });
 
-            // 放開拉桿的瞬間，才讓 YouTube 真正跳轉過去
             progressBar.addEventListener('change', () => {
                 if (player && typeof player.getDuration === 'function') {
                     const duration = player.getDuration();
@@ -966,7 +969,6 @@
                 isDraggingProgress = false;
             });
 
-            // 啟動定時器，每 0.5 秒更新一次進度條
             if (progressInterval) clearInterval(progressInterval);
             progressInterval = setInterval(() => {
                 if (player && typeof player.getCurrentTime === 'function' && !isDraggingProgress) {
@@ -1053,7 +1055,6 @@
             document.getElementById('youtube-container').innerHTML = '<div id="yt-player-placeholder" style="color:#666; font-size: 18px;">請從下方播放列表選擇歌曲。</div>';
             player = null; 
             
-            // 重置進度條 UI
             document.getElementById('yt-progress-bar').value = 0;
             document.getElementById('yt-current-time').innerText = "00:00";
             document.getElementById('yt-duration').innerText = "00:00";
