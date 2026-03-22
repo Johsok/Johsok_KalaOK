@@ -538,6 +538,7 @@
 
         // =========================================
         // 驗證與本機記憶系統 (多用戶隔離登入)
+        // 修正：增加對未驗證信箱的防呆與提示
         // =========================================
         async function handleLogin() {
             const email = document.getElementById('auth-email').value.trim();
@@ -546,11 +547,17 @@
 
             try {
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-                if (error) throw error;
+                if (error) {
+                    // 若因為驗證信沒點而報錯，給予明確提示
+                    if (error.message.includes('Email not confirmed')) {
+                        throw new Error('登入失敗：您尚未點擊驗證信！\n\n建議您至 Supabase 後台 -> Authentication -> Providers -> Email 中將「Confirm email」關閉，這樣註冊後即可直接登入。');
+                    }
+                    throw error;
+                }
                 showToast("✅ 登入成功！");
                 document.getElementById('auth-overlay').style.display = 'none';
             } catch (error) {
-                alert("❌ 登入失敗：" + error.message);
+                alert(error.message);
             }
         }
 
@@ -563,7 +570,14 @@
             try {
                 const { data, error } = await supabaseClient.auth.signUp({ email, password });
                 if (error) throw error;
-                alert("✅ 註冊成功！請檢查您的信箱是否需要驗證，或者直接登入。");
+
+                // 若註冊完 session 不為空，代表後台有關閉強制驗證，已自動登入
+                if (data.session) {
+                    alert("✅ 註冊成功並已自動為您登入！");
+                } else {
+                    // 否則提醒使用者這是一個常見問題
+                    alert("✅ 帳號註冊成功！\n\n⚠️ 如果您無法登入 (或沒收到驗證信)：\n強烈建議您進入 Supabase 後台 (Authentication > Providers > Email) 將「Confirm email」開關關閉，即可免驗證直接登入喔！");
+                }
             } catch (error) {
                 alert("❌ 註冊失敗：" + error.message);
             }
@@ -624,7 +638,7 @@
             checkSupabaseConnection(0);
         }
 
-        // 修改：初始化時先檢查 Auth Session
+        // 初始化時先檢查 Auth Session
         async function checkSupabaseConnection(attempts) {
             if (typeof window.supabase !== 'undefined') {
                 supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -953,7 +967,6 @@
         // 歌曲排序儲存機制
         // =========================================
         
-        // 此處省略上面拖曳的相關程式碼，僅保留資料庫儲存邏輯的修改
         let dragSrcEl = null;
 
         function sortLibraryByStrokes() {
@@ -1084,7 +1097,7 @@
         }
 
         // =========================================
-        // 播放、進度條與介面邏輯 (與舊版相同，不再贅述改動)
+        // 播放、進度條與介面邏輯 
         // =========================================
 
         function initProgressBar() {
