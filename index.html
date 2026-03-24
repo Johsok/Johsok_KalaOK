@@ -355,7 +355,7 @@
             .controls { gap: 8px; }
             .btn-control { min-width: 40px; height: 45px; }
             
-            /* 新增：RWD中，音量的+-符號自動隱藏 */
+            /* RWD中，音量的+-符號自動隱藏 */
             .btn-vol { display: none !important; }
             
             #lyrics-content { font-size: 16px; padding: 15px; line-height: 1.6; word-break: break-word; }
@@ -671,8 +671,35 @@
             if (typeof window.supabase !== 'undefined') {
                 supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
                 
-                // 監聽登入狀態改變
-                supabaseClient.auth.onAuthStateChange((event, session) => {
+                // 監聽登入狀態改變，加上 async 以便內部使用 await 更新密碼
+                supabaseClient.auth.onAuthStateChange(async (event, session) => {
+                    
+                    // === 新增：監聽密碼重設 (PASSWORD_RECOVERY) 事件 ===
+                    if (event === 'PASSWORD_RECOVERY') {
+                        // 當從信箱點擊 Reset Password 連結回到網頁時，會觸發此事件
+                        // 彈出視窗讓使用者輸入新密碼
+                        const newPassword = prompt("🔐 【重設密碼】\n請輸入您的新密碼 (至少 6 個字元)：");
+                        
+                        if (!newPassword || newPassword.length < 6) {
+                            alert("⚠️ 密碼長度不足或已取消重設。請重新申請忘記密碼。");
+                            return; // 終止後續動作
+                        }
+
+                        try {
+                            // 將新密碼更新到 Supabase
+                            const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+                            if (error) throw error;
+                            
+                            alert("✅ 密碼已成功更新！請使用新密碼重新登入。");
+                            // 更新成功後，強制登出，確保使用者使用新密碼登入體驗完整流程
+                            await supabaseClient.auth.signOut();
+                        } catch (err) {
+                            alert(`❌ 更新密碼失敗：\n${err.message}`);
+                        }
+                        return; // 執行完重設密碼流程，直接返回不執行下方登入邏輯
+                    }
+                    // =================================================
+
                     if (session) {
                         currentUser = session.user;
                         document.getElementById('auth-overlay').style.display = 'none';
@@ -1329,7 +1356,7 @@
                 player.loadVideoById(song.ytId);
             }
             
-            // 新增：設定 Media Session API，讓手機在背景或鎖屏時能維持音訊控制與播放
+            // 設定 Media Session API，讓手機在背景或鎖屏時能維持音訊控制與播放
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: song.title,
