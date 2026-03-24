@@ -44,7 +44,7 @@
             padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.8);
             width: 90%; max-width: 400px; text-align: center;
         }
-        .auth-box h2 { color: #fff; margin-top: 0; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        .auth-box h2 { color: #fff; margin-top: 0; text-shadow: 0 0 10px rgba(255,255,255,0.3); line-height: 1.4; }
         .auth-box input {
             width: 100%; padding: 12px 15px; margin-bottom: 15px; font-size: 14px;
             background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
@@ -365,8 +365,8 @@
     <div id="auth-overlay">
         <div class="auth-box">
             <h2>
-            傑斯克的練歌世界<br>
-            <span style="font-size: 18px; opacity: 0.8; font-weight: normal;">登入系統</span>
+                傑斯克的練歌世界<br>
+                <span style="font-size: 18px; opacity: 0.8; font-weight: normal;">登入系統</span>
             </h2>
             <p style="font-size: 13px; color: #ccc; margin-bottom: 20px;">登入後擁有自己獨立的歌曲庫與播放列表</p>
             <input type="email" id="auth-email" placeholder="請輸入電子信箱 (Email)">
@@ -449,6 +449,12 @@
                     </div>
 
                     <h3 id="form-mode-title" style="color: #4facfe; margin-top:0;">新增歌曲</h3>
+                    
+                    <div class="form-group">
+                        <label>歌手：</label>
+                        <input type="text" id="edit-singer" placeholder="輸入歌手名稱 (選填)">
+                    </div>
+
                     <div class="form-group">
                         <label>歌曲名稱：</label>
                         <input type="text" id="edit-title" placeholder="輸入歌名">
@@ -524,9 +530,9 @@
         const supabaseKey = 'sb_publishable_c46aC5fxRALpXswtxy8aIA_E-LHxIu9';
         let supabaseClient = null;
 
-        let currentUser = null; // 新增：儲存當前登入的使用者資訊
+        let currentUser = null; // 儲存當前登入的使用者資訊
         let songs = []; 
-        let globalSongs = []; // 新增：用來儲存公共資料庫的歌曲清單
+        let globalSongs = []; // 用來儲存公共資料庫的歌曲清單
         let playlist = []; 
         let currentPlayIndex = -1;
         let player = null;
@@ -746,7 +752,7 @@
             }
         }
 
-        // === 新增：公共資料庫相關功能 === 
+        // === 公共資料庫相關功能 === 
         async function openGlobalDatabase() {
             switchView('global-db');
             await fetchGlobalSongsFromSupabase();
@@ -799,8 +805,10 @@
                 const isOwned = myYtIds.has(song.ytId);
                 const card = document.createElement('div');
                 card.className = 'song-card';
+                // 修正：在畫面顯示時加上歌手名稱
+                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 card.innerHTML = `
-                    <strong>${song.title}</strong>
+                    <strong>${displayTitle}</strong>
                     <div class="card-btn-group">
                         ${isOwned 
                             ? `<button disabled style="background:rgba(255,255,255,0.2); color:#aaa; border:none; border-radius:5px; padding:6px; font-size:12px; width:100%;">已擁有</button>`
@@ -824,6 +832,7 @@
                 const newSong = { 
                     id: Date.now(), 
                     title: songToAdd.title, 
+                    singer: songToAdd.singer || "", // 新增：同時轉存歌手資料
                     ytId: songToAdd.ytId, 
                     lyrics: songToAdd.lyrics || "暫無歌詞",
                     sort_order: maxOrder + 1,
@@ -848,6 +857,8 @@
         async function saveSong() {
             if (!currentUser) return alert("請先登入！"); 
 
+            // 取得輸入值，包含新增的歌手欄位
+            const singer = document.getElementById('edit-singer').value.trim();
             const title = document.getElementById('edit-title').value.trim();
             const ytUrl = document.getElementById('edit-yt').value.trim();
             const lyrics = document.getElementById('edit-lyrics').value.trim();
@@ -863,7 +874,7 @@
                 if (editingSongId) {
                     const { error } = await supabaseClient
                         .from('songs')
-                        .update({ title: title, ytId: ytId, lyrics: lyrics })
+                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) // 修正：加入 singer 進行更新
                         .eq('id', editingSongId)
                         .eq('user_id', currentUser.id);
 
@@ -874,13 +885,14 @@
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
                     const newSong = { 
-                        id: Date.now(), title: title, ytId: ytId, lyrics: lyrics,
+                        id: Date.now(), title: title, singer: singer, ytId: ytId, lyrics: lyrics, // 修正：加入 singer 進行新增
                         sort_order: maxOrder + 1,
                         user_id: currentUser.id // 綁定使用者
                     };
                     const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
 
+                    document.getElementById('edit-singer').value = '';
                     document.getElementById('edit-title').value = '';
                     document.getElementById('edit-yt').value = '';
                     document.getElementById('edit-lyrics').value = '';
@@ -900,6 +912,7 @@
             if (!song) return;
             
             editingSongId = song.id;
+            document.getElementById('edit-singer').value = song.singer || ""; // 修正：帶入原有的歌手資料
             document.getElementById('edit-title').value = song.title;
             document.getElementById('edit-yt').value = `https://www.youtube.com/watch?v=${song.ytId}`;
             document.getElementById('edit-lyrics').value = song.lyrics || "";
@@ -913,6 +926,7 @@
 
         function cancelEdit() {
             editingSongId = null;
+            document.getElementById('edit-singer').value = '';
             document.getElementById('edit-title').value = '';
             document.getElementById('edit-yt').value = '';
             document.getElementById('edit-lyrics').value = '';
@@ -974,6 +988,7 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
+            // 修正：調整 AI Prompt 讓它回傳歌手屬性 (singer)
             const promptText = `請基於你的內部知識庫，推薦 5 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
@@ -981,7 +996,7 @@
 3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。
 4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
 
-請只回傳「純 JSON 陣列」，不要包含 \`\`\`json 標籤或任何 Markdown，直接回傳如 [{"title":"...","ytUrl":"...","lyrics":"..."}] 即可。`;
+請只回傳「純 JSON 陣列」，不要包含 \`\`\`json 標籤或任何 Markdown，直接回傳如 [{"singer":"...","title":"...","ytUrl":"...","lyrics":"..."}] 即可。`;
 
             try {
                 const modelName = 'gemini-1.5-flash'; 
@@ -1032,11 +1047,13 @@
                         let yID = extractVideoID(ytUrl);
                         if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
                         
+                        let singer = s.singer || s.artist || ""; // 新增：擷取 AI 傳回的歌手
                         let title = s.title || s.name || "未知歌曲";
                         let lyrics = s.lyrics || s.lyric || s.text || "暫無歌詞";
 
                         return {
                             id: Date.now() + i,
+                            singer: singer, // 儲存歌手
                             title: title,
                             ytId: yID,
                             lyrics: lyrics,
@@ -1108,7 +1125,9 @@
                 li.className = 'sortable-item';
                 li.draggable = true;
                 li.dataset.id = song.id;
-                li.innerHTML = `<div class="drag-handle" title="按住拖曳">☰</div><div style="color:#fff; flex:1; font-size:14px;">${song.title}</div>`;
+                // 修正：在列表顯示時加上歌手名稱
+                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                li.innerHTML = `<div class="drag-handle" title="按住拖曳">☰</div><div style="color:#fff; flex:1; font-size:14px;">${displayTitle}</div>`;
                 
                 li.addEventListener('dragstart', function(e) {
                     dragSrcEl = this;
@@ -1174,6 +1193,7 @@
                     id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
+                    singer: song.singer || "", // 新增：播放列表也存入歌手
                     sort_order: index,
                     lyrics: song.lyrics || "",
                     user_id: currentUser.id // 綁定使用者
@@ -1461,9 +1481,11 @@
             displaySongs.forEach(song => {
                 const card = document.createElement('div');
                 card.className = 'song-card';
+                // 修正：在卡片顯示時加上歌手名稱
+                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 card.innerHTML = `
                     <input type="checkbox" class="song-select-cb" value="${song.id}" title="勾選以批量刪除">
-                    <strong>${song.title}</strong>
+                    <strong>${displayTitle}</strong>
                     <div class="card-btn-group">
                         <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
                         <button class="edit-song-btn" onclick="editSong(${song.id})" title="編輯歌曲資料">✏️</button>
@@ -1514,9 +1536,11 @@
                 li.draggable = true;
                 li.dataset.index = index;
                 if (index === currentPlayIndex) li.classList.add('playing');
+                // 修正：在播放列表顯示時加上歌手名稱
+                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 li.innerHTML = `
                     <div class="drag-handle-playlist" title="按住拖曳">☰</div>
-                    <span onclick="playSong(${index})" style="flex:1; cursor:pointer;">${index + 1}. ${song.title}</span>
+                    <span onclick="playSong(${index})" style="flex:1; cursor:pointer;">${index + 1}. ${displayTitle}</span>
                     <button class="remove-btn" onclick="removeFromPlaylist(${index})" title="移除">✖</button>
                 `;
                 
@@ -1534,7 +1558,8 @@
         function updateLyricsView() {
             if (currentPlayIndex >= 0 && currentPlayIndex < playlist.length) {
                 const song = playlist[currentPlayIndex];
-                document.getElementById('lyrics-title').innerText = song.title;
+                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                document.getElementById('lyrics-title').innerText = displayTitle;
                 document.getElementById('lyrics-content').innerText = song.lyrics || "無歌詞";
             } else {
                 document.getElementById('lyrics-title').innerText = "尚未播放歌曲";
