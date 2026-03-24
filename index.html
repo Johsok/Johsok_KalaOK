@@ -99,7 +99,7 @@
         }
         .btn-ai-add:hover:not(:disabled) { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
-        /* 修正：公共資料庫按鈕改為漸層藍綠色 */
+        /* 公共資料庫按鈕漸層藍綠色 */
         .btn-global-db {
             background: linear-gradient(90deg, #00b4db 0%, #0083b0 100%) !important;
             color: #fff !important; border: none !important;
@@ -354,6 +354,9 @@
             
             .controls { gap: 8px; }
             .btn-control { min-width: 40px; height: 45px; }
+            
+            /* 新增：RWD中，音量的+-符號自動隱藏 */
+            .btn-vol { display: none !important; }
             
             #lyrics-content { font-size: 16px; padding: 15px; line-height: 1.6; word-break: break-word; }
             #song-grid, #global-song-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
@@ -644,6 +647,7 @@
 
         // 系統啟動器
         function initApp() {
+            // 讓手機背景音軌開始運作，欺騙瀏覽器讓音訊背景不斷線
             document.body.addEventListener('click', function() {
                 const bgAudio = document.getElementById('bg-audio-keepalive');
                 if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
@@ -698,11 +702,13 @@
             initApp();
         }
 
+        // 切換 APP 時（例如縮小畫面）的處理邏輯
         let wasPlayingBeforeHidden = false;
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                     wasPlayingBeforeHidden = true;
+                    // 這行會嘗試在隱藏後馬上強制播放，但通常仍會被 iOS 擋下。配合 Media Session 可以在控制中心恢復。
                     setTimeout(() => { if (player && typeof player.playVideo === 'function') player.playVideo(); }, 100);
                 } else {
                     wasPlayingBeforeHidden = false;
@@ -806,7 +812,7 @@
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 
-                // 修正：將歌手獨立顯示在歌名上方
+                // 將歌手字體微微放大至 12px
                 let singerHtml = song.singer ? `<span style="font-size:12px; color:#00b4db; margin-bottom:2px;">${song.singer}</span>` : '';
                 
                 card.innerHTML = `
@@ -1323,6 +1329,23 @@
                 player.loadVideoById(song.ytId);
             }
             
+            // 新增：設定 Media Session API，讓手機在背景或鎖屏時能維持音訊控制與播放
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: song.title,
+                    artist: song.singer || '傑斯克的練歌世界'
+                });
+                navigator.mediaSession.setActionHandler('play', function() { togglePlayPause(); });
+                navigator.mediaSession.setActionHandler('pause', function() { togglePlayPause(); });
+                navigator.mediaSession.setActionHandler('nexttrack', function() { playNext(); });
+                navigator.mediaSession.setActionHandler('previoustrack', function() { 
+                    if (playlist.length === 0) return;
+                    let prevIndex = currentPlayIndex - 1;
+                    if (prevIndex < 0) prevIndex = playlist.length - 1;
+                    playSong(prevIndex);
+                });
+            }
+
             renderPlaylist();
             updateLyricsView();
         }
@@ -1483,8 +1506,8 @@
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 
-                // 修正：將歌手獨立顯示在歌名上方
-                let singerHtml = song.singer ? `<span style="font-size:10px; color:#4facfe; margin-bottom:2px;">${song.singer}</span>` : '';
+                // 將歌手字體微微放大至 12px
+                let singerHtml = song.singer ? `<span style="font-size:12px; color:#4facfe; margin-bottom:2px;">${song.singer}</span>` : '';
 
                 card.innerHTML = `
                     <input type="checkbox" class="song-select-cb" value="${song.id}" title="勾選以批量刪除">
@@ -1540,7 +1563,7 @@
                 li.draggable = true;
                 li.dataset.index = index;
                 if (index === currentPlayIndex) li.classList.add('playing');
-                // 修正：在播放列表顯示時加上歌手名稱
+                // 在播放列表顯示時加上歌手名稱
                 let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 li.innerHTML = `
                     <div class="drag-handle-playlist" title="按住拖曳">☰</div>
