@@ -99,6 +99,13 @@
         }
         .btn-ai-add:hover:not(:disabled) { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
+        /* 新增：公共資料庫按鈕樣式 */
+        .btn-global-db {
+            background: linear-gradient(90deg, #f6d365 0%, #fda085 100%) !important;
+            color: #fff !important; border: none !important;
+        }
+        .btn-global-db:hover { box-shadow: 0 4px 15px rgba(253, 160, 133, 0.5) !important; transform: translateY(-2px); }
+
         /* 批量刪除按鈕特殊樣式 */
         .btn-batch-delete {
             background: rgba(255, 75, 43, 0.8) !important;
@@ -158,7 +165,7 @@
         }
 
         /* 音樂卡片與 UI */
-        #song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+        #song-grid, #global-song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .song-card { 
             padding: 22px 8px 10px 8px; text-align: center; 
             background: rgba(0, 0, 0, 0.3); border-radius: 10px; 
@@ -176,7 +183,7 @@
             cursor: pointer; accent-color: #ff4b2b; 
         }
 
-        .card-btn-group { display: flex; gap: 6px; margin-top: auto; }
+        .card-btn-group { display: flex; gap: 6px; margin-top: auto; width: 100%; justify-content: center;}
         
         /* 統一按鈕小巧風格 */
         .add-to-playlist-btn, .edit-song-btn {
@@ -349,7 +356,7 @@
             .btn-control { min-width: 40px; height: 45px; }
             
             #lyrics-content { font-size: 16px; padding: 15px; line-height: 1.6; word-break: break-word; }
-            #song-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+            #song-grid, #global-song-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
         }
     </style>
 </head>
@@ -404,9 +411,21 @@
                         <button onclick="sortLibraryByStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #4facfe; background: rgba(0,0,0,0.3); color: #4facfe; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(79,172,254,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="僅在目前畫面依筆劃排序顯示，不存入資料庫">依筆劃<br>排序</button>
                         <button onclick="batchDeleteSongs()" class="btn-batch-delete" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="批次刪除已勾選的歌曲">🗑️批量<br>刪除</button>
                         <button id="btn-ai-add" onclick="autoAddSongs()" class="btn-ai-add" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="呼叫 Gemini 自動找歌入庫">✨AI找<br>新歌</button>
+                        <button onclick="openGlobalDatabase()" class="btn-global-db" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="列出資料庫裡所有人的歌曲庫清單">🌐公共<br>資料庫</button>
                     </div>
                 </div>
                 <div id="song-grid">尚未載入資料...</div>
+            </div>
+
+            <div id="view-global-db" class="view-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h3 style="color: #fda085; margin:0;">🌐 公共歌曲資料庫</h3>
+                        <span style="font-size: 12px; color: #ccc;">這裡彙整了所有人新增的歌曲，點擊可加入至自己的歌曲庫。</span>
+                    </div>
+                    <button onclick="switchView('songs')" style="padding: 5px 15px; border-radius: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">返回專屬庫</button>
+                </div>
+                <div id="global-song-grid">載入中...</div>
             </div>
 
             <div id="view-lyrics" class="view-section">
@@ -504,6 +523,7 @@
 
         let currentUser = null; // 新增：儲存當前登入的使用者資訊
         let songs = []; 
+        let globalSongs = []; // 新增：用來儲存公共資料庫的歌曲清單
         let playlist = []; 
         let currentPlayIndex = -1;
         let player = null;
@@ -538,7 +558,6 @@
 
         // =========================================
         // 驗證與本機記憶系統 (多用戶隔離登入)
-        // 修正：增加對未驗證信箱的防呆與提示
         // =========================================
         async function handleLogin() {
             const email = document.getElementById('auth-email').value.trim();
@@ -548,7 +567,6 @@
             try {
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if (error) {
-                    // 若因為驗證信沒點而報錯，給予明確提示
                     if (error.message.includes('Email not confirmed')) {
                         throw new Error('登入失敗：您尚未點擊驗證信！\n\n建議您至 Supabase 後台 -> Authentication -> Providers -> Email 中將「Confirm email」關閉，這樣註冊後即可直接登入。');
                     }
@@ -571,11 +589,9 @@
                 const { data, error } = await supabaseClient.auth.signUp({ email, password });
                 if (error) throw error;
 
-                // 若註冊完 session 不為空，代表後台有關閉強制驗證，已自動登入
                 if (data.session) {
                     alert("✅ 註冊成功並已自動為您登入！");
                 } else {
-                    // 否則提醒使用者這是一個常見問題
                     alert("✅ 帳號註冊成功！\n\n⚠️ 如果您無法登入 (或沒收到驗證信)：\n強烈建議您進入 Supabase 後台 (Authentication > Providers > Email) 將「Confirm email」開關關閉，即可免驗證直接登入喔！");
                 }
             } catch (error) {
@@ -598,7 +614,6 @@
         async function handleLogout() {
             if (confirm("確定要登出嗎？")) {
                 await supabaseClient.auth.signOut();
-                // 登出時清空當前資料，防止互相干擾
                 songs = [];
                 playlist = [];
                 renderSongGrid();
@@ -705,13 +720,12 @@
         }
 
         // =========================================
-        // Supabase 資料庫操作區塊 (全部加入防護與綁定 user_id)
+        // Supabase 資料庫操作區塊
         // =========================================
 
         async function fetchSongsFromSupabase() {
             if (!currentUser) return;
             try {
-                // RLS 會自動幫我們過濾只屬於當前用戶的資料，但加上 eq user_id 更嚴謹
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
@@ -728,6 +742,105 @@
                 console.error("無法從 Supabase 讀取資料:", err);
             }
         }
+
+        // === 新增：公共資料庫相關功能 === 
+        async function openGlobalDatabase() {
+            switchView('global-db');
+            await fetchGlobalSongsFromSupabase();
+        }
+
+        async function fetchGlobalSongsFromSupabase() {
+            if (!currentUser) return;
+            try {
+                document.getElementById('global-song-grid').innerHTML = '載入中...';
+                
+                // 抓取所有資料庫中的歌曲 (不限制 user_id，列出所有人加過的歌)
+                const { data, error } = await supabaseClient
+                    .from('songs')
+                    .select('*')
+                    .order('title', { ascending: true });
+
+                if (error) throw error;
+
+                // 利用 ytId 過濾掉重複的歌曲，確保公共清單乾淨不重複
+                const uniqueSongsMap = new Map();
+                if(data) {
+                    data.forEach(song => {
+                        if(!uniqueSongsMap.has(song.ytId)) {
+                            uniqueSongsMap.set(song.ytId, song);
+                        }
+                    });
+                }
+                globalSongs = Array.from(uniqueSongsMap.values());
+                renderGlobalSongGrid();
+            } catch (err) {
+                console.error("無法從 Supabase 讀取公共資料:", err);
+                document.getElementById('global-song-grid').innerHTML = '<div style="color:#ff4b2b;">讀取公共資料庫失敗。</div>';
+            }
+        }
+
+        function renderGlobalSongGrid() {
+            const grid = document.getElementById('global-song-grid');
+            if(!grid) return;
+            grid.innerHTML = '';
+
+            if (globalSongs.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; color:#ccc;">公共資料庫目前沒有資料喔！</div>';
+                return;
+            }
+
+            // 取得目前用戶已經擁有的 YouTube IDs，用來比對按鈕狀態
+            const myYtIds = new Set(songs.map(s => s.ytId));
+
+            globalSongs.forEach(song => {
+                const isOwned = myYtIds.has(song.ytId);
+                const card = document.createElement('div');
+                card.className = 'song-card';
+                card.innerHTML = `
+                    <strong>${song.title}</strong>
+                    <div class="card-btn-group">
+                        ${isOwned 
+                            ? `<button disabled style="background:rgba(255,255,255,0.2); color:#aaa; border:none; border-radius:5px; padding:6px; font-size:12px; width:100%;">已擁有</button>`
+                            : `<button onclick="addGlobalSongToMyLibrary('${song.ytId}')" style="background:#38ef7d; color:#000; border:none; border-radius:5px; padding:6px; font-size:12px; cursor:pointer; font-weight:bold; width:100%; transition: 0.3s;" onmouseover="this.style.boxShadow='0 0 10px #38ef7d'" onmouseout="this.style.boxShadow='none'" title="將此首歌曲加入到我的專屬歌曲庫">➕ 加入</button>`
+                        }
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function addGlobalSongToMyLibrary(ytId) {
+            if (!currentUser) return;
+            const songToAdd = globalSongs.find(s => s.ytId === ytId);
+            if (!songToAdd) return;
+
+            try {
+                showToast("⏳ 正在加入到我的歌曲庫...", 1000);
+                const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
+                
+                const newSong = { 
+                    id: Date.now(), 
+                    title: songToAdd.title, 
+                    ytId: songToAdd.ytId, 
+                    lyrics: songToAdd.lyrics || "暫無歌詞",
+                    sort_order: maxOrder + 1,
+                    user_id: currentUser.id // 重要：綁定為自己的帳號
+                };
+
+                const { error } = await supabaseClient.from('songs').insert([newSong]);
+                if (error) throw error;
+
+                showToast(`✅ 已將「${songToAdd.title}」成功加入我的歌曲庫！`);
+                
+                // 加入完畢後重新抓取並更新畫面
+                await fetchSongsFromSupabase(); 
+                renderGlobalSongGrid(); // 重新繪製已改變的按鈕狀態 (變成"已擁有")
+
+            } catch (err) {
+                alert(`❌ 加入發生錯誤：\n${err.message}`);
+            }
+        }
+        // === 結束：公共資料庫相關功能 ===
 
         async function saveSong() {
             if (!currentUser) return alert("請先登入！"); 
@@ -836,7 +949,7 @@
         }
 
         // =========================================
-        // AI 自動找歌 (修正版 Model + JSON 強制回傳)
+        // AI 自動找歌
         // =========================================
         async function autoAddSongs() {
             if (!currentUser) return;
@@ -858,7 +971,6 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 優化 Prompt 避免回傳格式錯誤
             const promptText = `請基於你的內部知識庫，推薦 5 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
@@ -869,14 +981,13 @@
 請只回傳「純 JSON 陣列」，不要包含 \`\`\`json 標籤或任何 Markdown，直接回傳如 [{"title":"...","ytUrl":"...","lyrics":"..."}] 即可。`;
 
             try {
-                // 修正：目前 Google 穩定的型號為 gemini-1.5-flash
                 const modelName = 'gemini-1.5-flash'; 
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
                     generationConfig: { 
-                        response_mime_type: "application/json", // 強制要求 JSON 格式輸出
+                        response_mime_type: "application/json", 
                         maxOutputTokens: 8192 
                     }
                 };
@@ -1324,7 +1435,10 @@
             } else {
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
-                const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(viewName === 'edit' ? '新增與編輯' : '歌曲列表'));
+                
+                // 如果是 global-db，依然高亮「歌曲列表」按鈕作為所屬區塊
+                let btnTargetStr = viewName === 'edit' ? '新增與編輯' : '歌曲列表';
+                const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(btnTargetStr));
                 if(activeBtn) activeBtn.classList.add('active');
             }
 
