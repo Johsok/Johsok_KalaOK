@@ -498,7 +498,7 @@
                     <button class="btn-control icon-fastforward" onclick="seekVideo(5)" title="快轉5秒"></button>
                     <button class="btn-control" onclick="togglePlayPause()" title="播放/暫停">⏯</button>
                     <button class="btn-control icon-fullscreen" onclick="toggleCustomFullscreen()" title="全螢幕"></button>
-                    <button class="btn-control" onclick="clearPlaylist()" title="清空播放列表">🗑️</button>
+                    <button id="btn-single-loop" class="btn-control" onclick="toggleSingleLoop()" title="單曲循環">🔂</button>
                 </div>
                 <div class="controls loop-controls">
                     <button class="btn-control btn-loop" id="btn-loop-start" onclick="setLoopStart()" title="設定循環起點">開始<br><span>--:--</span></button>
@@ -548,6 +548,9 @@
         
         let isDraggingProgress = false;
         let progressInterval = null;
+
+        // 【修改1】：全域單曲循環變數
+        let isSingleLoop = false; 
 
         // 核心 API 處理工具
         const fetchWithRetry = async (url, options, retries = 3) => {
@@ -732,18 +735,20 @@
             initApp();
         }
 
-        // 切換 APP 時（例如縮小畫面）的處理邏輯
+        // === 【修改2】：切換 APP 時（例如縮小畫面）的背景播放處理邏輯修正 ===
         let wasPlayingBeforeHidden = false;
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                     wasPlayingBeforeHidden = true;
-                    // 這行會嘗試在隱藏後馬上強制播放，但通常仍會被 iOS 擋下。配合 Media Session 可以在控制中心恢復。
-                    setTimeout(() => { if (player && typeof player.playVideo === 'function') player.playVideo(); }, 100);
+                    // 【修正】移除原有的 setTimeout 強制播放，以免與作業系統的背景媒體控制衝突
+                    // 手機會自然暫停 iframe，我們讓背景維持音軌繼續作用，
+                    // 讓使用者能在手機控制中心 (Control Center) 使用 Media Session 喚醒播放即可。
                 } else {
                     wasPlayingBeforeHidden = false;
                 }
             } else {
+                // 回到網頁時，若原本是播放狀態則確保繼續播放
                 if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') player.playVideo();
             }
         });
@@ -1271,6 +1276,23 @@
         // 播放、進度條與介面邏輯 
         // =========================================
 
+        // 【修改1】：加入切換單曲循環功能的函式
+        function toggleSingleLoop() {
+            isSingleLoop = !isSingleLoop;
+            const btn = document.getElementById('btn-single-loop');
+            if (isSingleLoop) {
+                btn.classList.add('active');
+                btn.style.color = '#38ef7d';
+                btn.style.borderColor = '#38ef7d';
+                showToast("🔁 已開啟單曲循環");
+            } else {
+                btn.classList.remove('active');
+                btn.style.color = '#fff';
+                btn.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                showToast("➡️ 已關閉單曲循環，將照常切換下一首");
+            }
+        }
+
         function initProgressBar() {
             const progressBar = document.getElementById('yt-progress-bar');
             const currentTimeDisplay = document.getElementById('yt-current-time');
@@ -1352,21 +1374,42 @@
                     playerVars: { 'autoplay': 1, 'enablejsapi': 1, 'origin': origin, 'rel': 0, 'playsinline': 1 },
                     events: {
                         'onReady': (event) => { event.target.playVideo(); },
-                        'onStateChange': (event) => { if (event.data === YT.PlayerState.ENDED) playNext(); }
+                        'onStateChange': (event) => { 
+                            if (event.data === YT.PlayerState.ENDED) {
+                                // 【修改1】：加入單曲循環判斷
+                                if (isSingleLoop) {
+                                    player.seekTo(0);
+                                    player.playVideo();
+                                } else {
+                                    playNext(); 
+                                }
+                            } 
+                        }
                     }
                 });
             } else {
                 player.loadVideoById(song.ytId);
             }
             
-            // 設定 Media Session API，讓手機在背景或鎖屏時能維持音訊控制與播放
+            // === 【修改2】：設定 Media Session API ===
+            // 讓手機在背景或鎖屏時能透過控制中心維持音訊控制與接管播放狀態
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: song.title,
                     artist: song.singer || '傑斯克的練歌世界'
                 });
-                navigator.mediaSession.setActionHandler('play', function() { togglePlayPause(); });
-                navigator.mediaSession.setActionHandler('pause', function() { togglePlayPause(); });
+                
+                // 【修正】確保明確執行 player.playVideo() / pauseVideo()
+                navigator.mediaSession.setActionHandler('play', function() { 
+                    if (player && typeof player.playVideo === 'function') player.playVideo();
+                    
+                    // 確保靜音背景音軌持續執行不被中斷
+                    const bgAudio = document.getElementById('bg-audio-keepalive');
+                    if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
+                });
+                navigator.mediaSession.setActionHandler('pause', function() { 
+                    if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+                });
                 navigator.mediaSession.setActionHandler('nexttrack', function() { playNext(); });
                 navigator.mediaSession.setActionHandler('previoustrack', function() { 
                     if (playlist.length === 0) return;
@@ -1383,8 +1426,16 @@
         function togglePlayPause() {
             if (player && typeof player.getPlayerState === 'function') {
                 const state = player.getPlayerState();
-                if (state === YT.PlayerState.PLAYING) { player.pauseVideo(); } 
-                else { player.playVideo(); }
+                
+                // 【修改2】：連動背景音軌
+                const bgAudio = document.getElementById('bg-audio-keepalive');
+                
+                if (state === YT.PlayerState.PLAYING) { 
+                    player.pauseVideo(); 
+                } else { 
+                    player.playVideo(); 
+                    if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
+                }
             }
         }
 
