@@ -99,12 +99,12 @@
         }
         .btn-ai-add:hover:not(:disabled) { box-shadow: 0 4px 15px rgba(142, 45, 226, 0.5) !important; transform: translateY(-2px); }
 
-        /* 新增：公共資料庫按鈕樣式 */
+        /* 修正：公共資料庫按鈕改為漸層藍綠色 */
         .btn-global-db {
-            background: linear-gradient(90deg, #f6d365 0%, #fda085 100%) !important;
+            background: linear-gradient(90deg, #00b4db 0%, #0083b0 100%) !important;
             color: #fff !important; border: none !important;
         }
-        .btn-global-db:hover { box-shadow: 0 4px 15px rgba(253, 160, 133, 0.5) !important; transform: translateY(-2px); }
+        .btn-global-db:hover { box-shadow: 0 4px 15px rgba(0, 180, 219, 0.5) !important; transform: translateY(-2px); }
 
         /* 批量刪除按鈕特殊樣式 */
         .btn-batch-delete {
@@ -423,7 +423,7 @@
             <div id="view-global-db" class="view-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <h3 style="color: #fda085; margin:0;">🌐 公共歌曲資料庫</h3>
+                        <h3 style="color: #00b4db; margin:0;">🌐 公共歌曲資料庫</h3>
                         <span style="font-size: 12px; color: #ccc;">這裡彙整了所有人新增的歌曲，點擊可加入至自己的歌曲庫。</span>
                     </div>
                     <button onclick="switchView('songs')" style="padding: 5px 15px; border-radius: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">返回專屬庫</button>
@@ -805,10 +805,13 @@
                 const isOwned = myYtIds.has(song.ytId);
                 const card = document.createElement('div');
                 card.className = 'song-card';
-                // 修正：在畫面顯示時加上歌手名稱
-                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                
+                // 修正：將歌手獨立顯示在歌名上方
+                let singerHtml = song.singer ? `<span style="font-size:10px; color:#00b4db; margin-bottom:2px;">${song.singer}</span>` : '';
+                
                 card.innerHTML = `
-                    <strong>${displayTitle}</strong>
+                    ${singerHtml}
+                    <strong>${song.title}</strong>
                     <div class="card-btn-group">
                         ${isOwned 
                             ? `<button disabled style="background:rgba(255,255,255,0.2); color:#aaa; border:none; border-radius:5px; padding:6px; font-size:12px; width:100%;">已擁有</button>`
@@ -832,7 +835,7 @@
                 const newSong = { 
                     id: Date.now(), 
                     title: songToAdd.title, 
-                    singer: songToAdd.singer || "", // 新增：同時轉存歌手資料
+                    singer: songToAdd.singer || "", // 同時轉存歌手資料
                     ytId: songToAdd.ytId, 
                     lyrics: songToAdd.lyrics || "暫無歌詞",
                     sort_order: maxOrder + 1,
@@ -874,7 +877,7 @@
                 if (editingSongId) {
                     const { error } = await supabaseClient
                         .from('songs')
-                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) // 修正：加入 singer 進行更新
+                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) 
                         .eq('id', editingSongId)
                         .eq('user_id', currentUser.id);
 
@@ -885,7 +888,7 @@
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
                     const newSong = { 
-                        id: Date.now(), title: title, singer: singer, ytId: ytId, lyrics: lyrics, // 修正：加入 singer 進行新增
+                        id: Date.now(), title: title, singer: singer, ytId: ytId, lyrics: lyrics, 
                         sort_order: maxOrder + 1,
                         user_id: currentUser.id // 綁定使用者
                     };
@@ -912,7 +915,7 @@
             if (!song) return;
             
             editingSongId = song.id;
-            document.getElementById('edit-singer').value = song.singer || ""; // 修正：帶入原有的歌手資料
+            document.getElementById('edit-singer').value = song.singer || ""; 
             document.getElementById('edit-title').value = song.title;
             document.getElementById('edit-yt').value = `https://www.youtube.com/watch?v=${song.ytId}`;
             document.getElementById('edit-lyrics').value = song.lyrics || "";
@@ -988,7 +991,6 @@
 
             const currentTitles = songs.map(s => s.title).join(", ");
             
-            // 修正：調整 AI Prompt 讓它回傳歌手屬性 (singer)
             const promptText = `請基於你的內部知識庫，推薦 5 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
@@ -1047,7 +1049,7 @@
                         let yID = extractVideoID(ytUrl);
                         if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
                         
-                        let singer = s.singer || s.artist || ""; // 新增：擷取 AI 傳回的歌手
+                        let singer = s.singer || s.artist || ""; 
                         let title = s.title || s.name || "未知歌曲";
                         let lyrics = s.lyrics || s.lyric || s.text || "暫無歌詞";
 
@@ -1125,7 +1127,6 @@
                 li.className = 'sortable-item';
                 li.draggable = true;
                 li.dataset.id = song.id;
-                // 修正：在列表顯示時加上歌手名稱
                 let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 li.innerHTML = `<div class="drag-handle" title="按住拖曳">☰</div><div style="color:#fff; flex:1; font-size:14px;">${displayTitle}</div>`;
                 
@@ -1193,7 +1194,7 @@
                     id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
-                    singer: song.singer || "", // 新增：播放列表也存入歌手
+                    singer: song.singer || "", // 播放列表也存入歌手
                     sort_order: index,
                     lyrics: song.lyrics || "",
                     user_id: currentUser.id // 綁定使用者
@@ -1481,11 +1482,14 @@
             displaySongs.forEach(song => {
                 const card = document.createElement('div');
                 card.className = 'song-card';
-                // 修正：在卡片顯示時加上歌手名稱
-                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                
+                // 修正：將歌手獨立顯示在歌名上方
+                let singerHtml = song.singer ? `<span style="font-size:10px; color:#4facfe; margin-bottom:2px;">${song.singer}</span>` : '';
+
                 card.innerHTML = `
                     <input type="checkbox" class="song-select-cb" value="${song.id}" title="勾選以批量刪除">
-                    <strong>${displayTitle}</strong>
+                    ${singerHtml}
+                    <strong>${song.title}</strong>
                     <div class="card-btn-group">
                         <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
                         <button class="edit-song-btn" onclick="editSong(${song.id})" title="編輯歌曲資料">✏️</button>
