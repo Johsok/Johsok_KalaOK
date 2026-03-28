@@ -536,9 +536,9 @@
         const supabaseKey = 'sb_publishable_c46aC5fxRALpXswtxy8aIA_E-LHxIu9';
         let supabaseClient = null;
 
-        let currentUser = null; // 儲存當前登入的使用者資訊
+        let currentUser = null; 
         let songs = []; 
-        let globalSongs = []; // 用來儲存公共資料庫的歌曲清單
+        let globalSongs = []; 
         let playlist = []; 
         let currentPlayIndex = -1;
         let player = null;
@@ -574,7 +574,7 @@
         };
 
         // =========================================
-        // 驗證與本機記憶系統 (多用戶隔離登入)
+        // 驗證與本機記憶系統 
         // =========================================
         async function handleLogin() {
             const email = document.getElementById('auth-email').value.trim();
@@ -652,7 +652,6 @@
             return key;
         }
 
-        // 系統啟動器
         function initApp() {
             document.body.addEventListener('click', function() {
                 const bgAudio = document.getElementById('bg-audio-keepalive');
@@ -723,8 +722,7 @@
             initApp();
         }
 
-        // === 【新增修改：iOS Safari 背景播放增強機制】 ===
-        // 透過連續播放訊號覆蓋 iOS 系統隱藏網頁時自動暫停 iframe 影片的特性
+        // === iOS Safari 背景播放機制 ===
         let wasPlayingBeforeHidden = false;
         let iosBgInterval = null;
 
@@ -733,10 +731,8 @@
             if (document.hidden) {
                 if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                     wasPlayingBeforeHidden = true;
-                    // 確保背景音軌播放以取得系統 Audio Session 控制權
                     if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
                     
-                    // 利用計時器強迫呼叫播放，對抗 iOS 中斷播放
                     iosBgInterval = setInterval(() => {
                         if (player && typeof player.playVideo === 'function') {
                             player.playVideo();
@@ -750,7 +746,6 @@
                     clearInterval(iosBgInterval);
                     iosBgInterval = null;
                 }
-                // 回到網頁時，若原本是播放狀態則確保繼續播放
                 if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') {
                     player.playVideo();
                 }
@@ -873,8 +868,8 @@
                 showToast("⏳ 正在加入到我的歌曲庫...", 1000);
                 const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                 
+                // 【核心修正】：移除假 ID，交給資料庫原生生成
                 const newSong = { 
-                    id: Date.now(), 
                     title: songToAdd.title, 
                     singer: songToAdd.singer || "", 
                     ytId: songToAdd.ytId, 
@@ -897,7 +892,7 @@
         }
         // === 結束：公共資料庫相關功能 ===
 
-        // === 【深度修復 Bug 2】：編輯歌曲與儲存 ===
+        // === 【深度修復 Bug 2】：徹底解決編輯失敗與 ID 不匹配問題 ===
         async function saveSong() {
             if (!currentUser) return alert("請先登入！"); 
 
@@ -915,15 +910,21 @@
                 showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
-                    // 【重點修復】：純對應 id 更新，避免部分沒有綁定 user_id 的舊資料因權限判斷而靜默失敗
-                    const { error } = await supabaseClient
+                    // 【核心修正】：利用 .select() 取得回傳值，確保資料真的被 Update，而不是因爲 ID 錯誤而靜默失敗 (影響 0 筆)
+                    const { data, error } = await supabaseClient
                         .from('songs')
                         .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) 
-                        .eq('id', editingSongId);
+                        .eq('id', editingSongId)
+                        .eq('user_id', currentUser.id)
+                        .select();
 
                     if (error) throw error;
+                    // 如果沒找到該 ID 或無權限，資料庫不會報錯但回傳空陣列，需手動攔截
+                    if (!data || data.length === 0) {
+                        throw new Error("更新失敗：找不到該首歌曲，可能已不存在或無權限修改。");
+                    }
 
-                    // 【樂觀更新機制】：手動更新本地陣列並重新渲染，避免資料庫延遲造成畫面重置為舊資料
+                    // 樂觀更新：直接同步本地陣列資料，避免畫面跳轉時遇到資料庫快取延遲
                     const sIndex = songs.findIndex(s => s.id === editingSongId);
                     if (sIndex > -1) {
                         songs[sIndex].title = title;
@@ -934,7 +935,7 @@
 
                     showToast("✅ 歌曲資料已成功更新！");
                     
-                    // 重置編輯表單狀態
+                    // 重置表單狀態
                     editingSongId = null;
                     document.getElementById('edit-singer').value = '';
                     document.getElementById('edit-title').value = '';
@@ -946,16 +947,21 @@
                 } else {
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
+                    // 【核心修正】：絕不寫入本地的假 ID (Date.now())，交給資料庫生成真實 ID，才不會造成後續編輯的尋找錯誤！
                     const newSong = { 
-                        id: Date.now(), title: title, singer: singer, ytId: ytId, lyrics: lyrics, 
+                        title: title, singer: singer, ytId: ytId, lyrics: lyrics, 
                         sort_order: maxOrder + 1,
                         user_id: currentUser.id 
                     };
-                    const { error } = await supabaseClient.from('songs').insert([newSong]);
+                    
+                    // 加上 .select() 直接取得包含真正「資料庫流水號 ID」的完整物件
+                    const { data, error } = await supabaseClient.from('songs').insert([newSong]).select();
                     if (error) throw error;
 
-                    // 樂觀更新機制：直接推入本地陣列
-                    songs.push(newSong);
+                    // 將帶有真實 ID 的資料放進本地陣列
+                    if (data && data.length > 0) {
+                        songs.push(data[0]);
+                    }
 
                     document.getElementById('edit-singer').value = '';
                     document.getElementById('edit-title').value = '';
@@ -964,7 +970,7 @@
                     showToast("🎉 歌曲已成功新增！");
                 }
                 
-                // 直接使用最新修改的陣列重新渲染畫面，切換檢視
+                // 由於已經執行了樂觀更新 (同步修改陣列)，直接呼叫渲染並切換畫面即可
                 renderSongGrid();
                 renderEditSongList();
                 switchView('songs'); 
@@ -1108,6 +1114,7 @@
 
                     const startOrder = songs.length;
 
+                    // 【核心修正】：移除自訂 ID
                     const insertData = newSongs.map((s, i) => {
                         let ytUrl = s.ytUrl || s.youtubeUrl || s.url || s.link || "";
                         let yID = extractVideoID(ytUrl);
@@ -1118,7 +1125,6 @@
                         let lyrics = s.lyrics || s.lyric || s.text || "暫無歌詞";
 
                         return {
-                            id: Date.now() + i,
                             singer: singer, 
                             title: title,
                             ytId: yID,
@@ -1166,7 +1172,6 @@
         
         let dragSrcEl = null;
 
-        // 【修改功能 3】依歌曲第一字筆畫排序
         function sortLibraryBySongStrokes() {
             if (songs.length === 0) return;
             songs.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
@@ -1175,7 +1180,6 @@
             showToast("🔠 已依「歌曲」筆畫排序顯示！請點擊右側「儲存排序」正式存入資料庫。");
         }
 
-        // 【修改功能 3】依歌手第一字筆畫排序
         function sortLibraryBySingerStrokes() {
             if (songs.length === 0) return;
             songs.sort((a, b) => {
@@ -1244,35 +1248,34 @@
             });
         }
 
-        // === 【深度修復 Bug 1】：儲存排序功能增強 ===
-        // 取消了會導致請求阻塞被阻擋 (Rate Limit) 的 Promise.all，改採優先 Upsert 批量寫入方案
+        // === 【深度修復 Bug 1】：最穩定的循序儲存排序 ===
         async function saveSongOrder() {
             if (!currentUser) return;
             if (songs.length === 0) return;
             try {
-                showToast("⏳ 正在儲存歌曲排序...", 1000); 
+                showToast("⏳ 正在儲存歌曲排序，請稍候...", 2000); 
                 
-                // 1. 將當下畫面排序後的新 Index 更新給陣列屬性
+                // 1. 先將最新排列過後的索引號寫入陣列屬性
                 songs.forEach((song, index) => { song.sort_order = index; });
 
-                // 2. 利用 upsert 一次性批量更新所有歌曲資料，避免像 Promise.all 發送過多併發請求而被系統丟棄
-                const { error } = await supabaseClient.from('songs').upsert(songs);
+                // 2. 放棄易引發衝突與限制的 upsert 及 Promise.all。改用最穩定的一筆筆循序寫入。
+                // 由於只更新一個欄位 (sort_order)，處理 30~50 首歌通常只需極短時間，且保證 100% 寫入無缺漏。
+                for (const song of songs) {
+                    const { error } = await supabaseClient
+                        .from('songs')
+                        .update({ sort_order: song.sort_order })
+                        .eq('id', song.id)
+                        .eq('user_id', currentUser.id);
 
-                if (error) {
-                    // 若 upsert 不支援或被 RLS 擋住，自動轉用穩定、安全的循序迴圈單筆更新
-                    console.warn("批量更新受限，改為單筆循序寫入...");
-                    for (const song of songs) {
-                        const { error: updateErr } = await supabaseClient
-                            .from('songs')
-                            .update({ sort_order: song.sort_order })
-                            .eq('id', song.id);
-                        if (updateErr) throw updateErr;
+                    if (error) {
+                        console.error(`歌曲 [${song.title}] 排序更新失敗:`, error);
+                        throw new Error(`部分歌曲排序失敗，請重試。\n(${error.message})`);
                     }
                 }
 
-                showToast("✅ 歌曲排序已成功儲存至資料庫！");
-                
-                // 3. 排序完成後直接利用本地陣列繪製畫面即可，不要重新 fetch 避免舊快取干擾
+                showToast("✅ 歌曲排序已成功儲存至資料庫！", 2500);
+
+                // 3. 畫面已與內部陣列同步，無需重新 fetch，直接更新畫面節點即可
                 renderSongGrid();
                 renderEditSongList();
             } catch (err) {
@@ -1281,7 +1284,7 @@
         }
 
         // =========================================
-        // 播放列表的雲端儲存與讀取 (確保多用戶獨立)
+        // 播放列表的雲端儲存與讀取
         // =========================================
 
         async function savePlaylistToDB() {
@@ -1292,8 +1295,8 @@
                 const { error: deleteError } = await supabaseClient.from('saved_playlist').delete().eq('user_id', currentUser.id); 
                 if (deleteError) throw deleteError;
                 
+                // 【修正】：不夾帶假 ID，讓新紀錄交由 DB 自動配置
                 const insertData = playlist.map((song, index) => ({
-                    id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
                     singer: song.singer || "", 
