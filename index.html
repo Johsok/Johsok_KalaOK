@@ -414,7 +414,10 @@
                         <span id="ai-status-text" style="font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 12px; display: none;"></span>
                     </div>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button onclick="sortLibraryByStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #4facfe; background: rgba(0,0,0,0.3); color: #4facfe; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(79,172,254,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="僅在目前畫面依筆劃排序顯示，不存入資料庫">依筆劃<br>排序</button>
+                        <button onclick="sortLibraryBySingerStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #ffc107; background: rgba(0,0,0,0.3); color: #ffc107; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(255,193,7,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="依歌手第一字筆畫排序顯示">依歌手<br>筆畫排序</button>
+                        <button onclick="sortLibraryBySongStrokes()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #4facfe; background: rgba(0,0,0,0.3); color: #4facfe; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(79,172,254,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="依歌曲第一字筆畫排序顯示">依歌曲<br>筆畫排序</button>
+                        <button onclick="saveSongOrder()" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #38ef7d; background: rgba(0,0,0,0.3); color: #38ef7d; cursor: pointer; line-height: 1.2; text-align: center; transition: 0.3s;" onmouseover="this.style.background='rgba(56,239,125,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'" title="將目前的排序存入資料庫">儲存<br>排序</button>
+                        
                         <button onclick="batchDeleteSongs()" class="btn-batch-delete" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="批次刪除已勾選的歌曲">🗑️批量<br>刪除</button>
                         <button id="btn-ai-add" onclick="autoAddSongs()" class="btn-ai-add" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="呼叫 Gemini 自動找歌入庫">✨AI找<br>新歌</button>
                         <button onclick="openGlobalDatabase()" class="btn-global-db" style="padding: 4px 10px; font-size: 12px; border-radius: 12px; cursor: pointer; line-height: 1.2; text-align: center;" title="列出資料庫裡所有人的歌曲庫清單">🌐公共<br>資料庫</button>
@@ -549,7 +552,6 @@
         let isDraggingProgress = false;
         let progressInterval = null;
 
-        // 【修改1】：全域單曲循環變數
         let isSingleLoop = false; 
 
         // 核心 API 處理工具
@@ -618,7 +620,6 @@
             const email = prompt("請輸入您的註冊信箱，我們將發送重設密碼信件給您：");
             if (!email) return;
             try {
-                // 加入 redirectTo 參數，無論你在本機還是 GitHub Pages，都會精準導回當前網頁
                 const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                     redirectTo: window.location.origin + window.location.pathname
                 });
@@ -653,7 +654,6 @@
 
         // 系統啟動器
         function initApp() {
-            // 讓手機背景音軌開始運作，欺騙瀏覽器讓音訊背景不斷線
             document.body.addEventListener('click', function() {
                 const bgAudio = document.getElementById('bg-audio-keepalive');
                 if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
@@ -672,39 +672,27 @@
             checkSupabaseConnection(0);
         }
 
-        // 初始化時先檢查 Auth Session
         async function checkSupabaseConnection(attempts) {
             if (typeof window.supabase !== 'undefined') {
                 supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
                 
-                // 監聽登入狀態改變，加上 async 以便內部使用 await 更新密碼
                 supabaseClient.auth.onAuthStateChange(async (event, session) => {
-                    
-                    // === 新增：監聽密碼重設 (PASSWORD_RECOVERY) 事件 ===
                     if (event === 'PASSWORD_RECOVERY') {
-                        // 當從信箱點擊 Reset Password 連結回到網頁時，會觸發此事件
-                        // 彈出視窗讓使用者輸入新密碼
                         const newPassword = prompt("🔐 【重設密碼】\n請輸入您的新密碼 (至少 6 個字元)：");
-                        
                         if (!newPassword || newPassword.length < 6) {
                             alert("⚠️ 密碼長度不足或已取消重設。請重新申請忘記密碼。");
-                            return; // 終止後續動作
+                            return; 
                         }
-
                         try {
-                            // 將新密碼更新到 Supabase
                             const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
                             if (error) throw error;
-                            
                             alert("✅ 密碼已成功更新！請使用新密碼重新登入。");
-                            // 更新成功後，強制登出，確保使用者使用新密碼登入體驗完整流程
                             await supabaseClient.auth.signOut();
                         } catch (err) {
                             alert(`❌ 更新密碼失敗：\n${err.message}`);
                         }
-                        return; // 執行完重設密碼流程，直接返回不執行下方登入邏輯
+                        return; 
                     }
-                    // =================================================
 
                     if (session) {
                         currentUser = session.user;
@@ -735,21 +723,37 @@
             initApp();
         }
 
-        // === 【修改2】：切換 APP 時（例如縮小畫面）的背景播放處理邏輯修正 ===
+        // === 【新增修改：iOS Safari 背景播放增強機制】 ===
+        // 透過連續播放訊號覆蓋 iOS 系統隱藏網頁時自動暫停 iframe 影片的特性
         let wasPlayingBeforeHidden = false;
+        let iosBgInterval = null;
+
         document.addEventListener('visibilitychange', () => {
+            const bgAudio = document.getElementById('bg-audio-keepalive');
             if (document.hidden) {
                 if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                     wasPlayingBeforeHidden = true;
-                    // 【修正】移除原有的 setTimeout 強制播放，以免與作業系統的背景媒體控制衝突
-                    // 手機會自然暫停 iframe，我們讓背景維持音軌繼續作用，
-                    // 讓使用者能在手機控制中心 (Control Center) 使用 Media Session 喚醒播放即可。
+                    // 確保背景音軌播放以取得系統 Audio Session 控制權
+                    if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
+                    
+                    // 利用計時器強迫呼叫播放，對抗 iOS 中斷播放
+                    iosBgInterval = setInterval(() => {
+                        if (player && typeof player.playVideo === 'function') {
+                            player.playVideo();
+                        }
+                    }, 1000);
                 } else {
                     wasPlayingBeforeHidden = false;
                 }
             } else {
+                if (iosBgInterval) {
+                    clearInterval(iosBgInterval);
+                    iosBgInterval = null;
+                }
                 // 回到網頁時，若原本是播放狀態則確保繼續播放
-                if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') player.playVideo();
+                if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') {
+                    player.playVideo();
+                }
             }
         });
 
@@ -804,7 +808,6 @@
             try {
                 document.getElementById('global-song-grid').innerHTML = '載入中...';
                 
-                // 抓取所有資料庫中的歌曲 (不限制 user_id，列出所有人加過的歌)
                 const { data, error } = await supabaseClient
                     .from('songs')
                     .select('*')
@@ -812,7 +815,6 @@
 
                 if (error) throw error;
 
-                // 利用 ytId 過濾掉重複的歌曲，確保公共清單乾淨不重複
                 const uniqueSongsMap = new Map();
                 if(data) {
                     data.forEach(song => {
@@ -839,7 +841,6 @@
                 return;
             }
 
-            // 取得目前用戶已經擁有的 YouTube IDs，用來比對按鈕狀態
             const myYtIds = new Set(songs.map(s => s.ytId));
 
             globalSongs.forEach(song => {
@@ -847,7 +848,6 @@
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 
-                // 將歌手字體微微放大至 12px
                 let singerHtml = song.singer ? `<span style="font-size:12px; color:#00b4db; margin-bottom:2px;">${song.singer}</span>` : '';
                 
                 card.innerHTML = `
@@ -876,11 +876,11 @@
                 const newSong = { 
                     id: Date.now(), 
                     title: songToAdd.title, 
-                    singer: songToAdd.singer || "", // 同時轉存歌手資料
+                    singer: songToAdd.singer || "", 
                     ytId: songToAdd.ytId, 
                     lyrics: songToAdd.lyrics || "暫無歌詞",
                     sort_order: maxOrder + 1,
-                    user_id: currentUser.id // 重要：綁定為自己的帳號
+                    user_id: currentUser.id
                 };
 
                 const { error } = await supabaseClient.from('songs').insert([newSong]);
@@ -888,9 +888,8 @@
 
                 showToast(`✅ 已將「${songToAdd.title}」成功加入我的歌曲庫！`);
                 
-                // 加入完畢後重新抓取並更新畫面
                 await fetchSongsFromSupabase(); 
-                renderGlobalSongGrid(); // 重新繪製已改變的按鈕狀態 (變成"已擁有")
+                renderGlobalSongGrid(); 
 
             } catch (err) {
                 alert(`❌ 加入發生錯誤：\n${err.message}`);
@@ -898,10 +897,10 @@
         }
         // === 結束：公共資料庫相關功能 ===
 
+        // === 【修正 Bug 1】：編輯儲存問題修正 ===
         async function saveSong() {
             if (!currentUser) return alert("請先登入！"); 
 
-            // 取得輸入值，包含新增的歌手欄位
             const singer = document.getElementById('edit-singer').value.trim();
             const title = document.getElementById('edit-title').value.trim();
             const ytUrl = document.getElementById('edit-yt').value.trim();
@@ -916,6 +915,7 @@
                 showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
+                    // 正確執行 update 並等待執行完成，同時確保 where 條件精準對到該 id
                     const { error } = await supabaseClient
                         .from('songs')
                         .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) 
@@ -924,14 +924,23 @@
 
                     if (error) throw error;
                     showToast("✅ 歌曲資料已成功更新！");
-                    cancelEdit(); 
+                    
+                    // 修正：手動重置畫面的狀態，而不直接呼叫 cancelEdit() 以免提早跳轉干擾流程
+                    editingSongId = null;
+                    document.getElementById('edit-singer').value = '';
+                    document.getElementById('edit-title').value = '';
+                    document.getElementById('edit-yt').value = '';
+                    document.getElementById('edit-lyrics').value = '';
+                    document.getElementById('form-mode-title').innerText = "新增歌曲";
+                    document.getElementById('btn-save-song').innerText = "新增至雲端 (Supabase)";
+                    document.getElementById('btn-cancel-edit').style.display = 'none';
                 } else {
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
                     const newSong = { 
                         id: Date.now(), title: title, singer: singer, ytId: ytId, lyrics: lyrics, 
                         sort_order: maxOrder + 1,
-                        user_id: currentUser.id // 綁定使用者
+                        user_id: currentUser.id 
                     };
                     const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
@@ -943,6 +952,7 @@
                     showToast("🎉 歌曲已成功新增！");
                 }
                 
+                // 執行完畢後重抓資料並跳轉頁面
                 await fetchSongsFromSupabase();
                 switchView('songs'); 
                 
@@ -996,7 +1006,7 @@
                     .from('songs')
                     .delete()
                     .in('id', idsToDelete)
-                    .eq('user_id', currentUser.id); // 確保只能刪除自己的
+                    .eq('user_id', currentUser.id);
 
                 if (error) throw error;
 
@@ -1096,12 +1106,12 @@
 
                         return {
                             id: Date.now() + i,
-                            singer: singer, // 儲存歌手
+                            singer: singer, 
                             title: title,
                             ytId: yID,
                             lyrics: lyrics,
                             sort_order: startOrder + i,
-                            user_id: currentUser.id // 綁定使用者
+                            user_id: currentUser.id 
                         };
                     });
 
@@ -1143,11 +1153,29 @@
         
         let dragSrcEl = null;
 
-        function sortLibraryByStrokes() {
+        // 【修改功能 3】依歌曲第一字筆畫排序
+        function sortLibraryBySongStrokes() {
             if (songs.length === 0) return;
-            const sortedSongs = [...songs].sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
-            renderSongGrid(sortedSongs);
-            showToast("🔠 歌曲庫已依筆劃排序顯示 (僅變更顯示，未存入資料庫)");
+            // 直接修改 songs 陣列，方便後續直接執行儲存
+            songs.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+            renderSongGrid();
+            renderEditSongList();
+            showToast("🔠 已依「歌曲」筆畫排序顯示！請點擊右側「儲存排序」正式存入資料庫。");
+        }
+
+        // 【修改功能 3】依歌手第一字筆畫排序
+        function sortLibraryBySingerStrokes() {
+            if (songs.length === 0) return;
+            songs.sort((a, b) => {
+                const singerA = a.singer || "";
+                const singerB = b.singer || "";
+                if (!singerA && singerB) return 1;
+                if (singerA && !singerB) return -1;
+                return singerA.localeCompare(singerB, 'zh-TW');
+            });
+            renderSongGrid();
+            renderEditSongList();
+            showToast("🔠 已依「歌手」筆畫排序顯示！請點擊右側「儲存排序」正式存入資料庫。");
         }
 
         function sortEditListByStrokes() {
@@ -1204,15 +1232,18 @@
             });
         }
 
+        // 【配合修改功能 3】此處負責將目前的陣列順序寫入資料庫
         async function saveSongOrder() {
             if (!currentUser) return;
             try {
                 showToast("⏳ 正在儲存歌曲排序...", 1000); 
-                const updatePromises = songs.map((song, index) => {
-                    return supabaseClient.from('songs').update({ sort_order: index }).eq('id', song.id).eq('user_id', currentUser.id); 
+                // 更新陣列屬性
+                songs.forEach((song, index) => { song.sort_order = index; });
+                const updatePromises = songs.map((song) => {
+                    return supabaseClient.from('songs').update({ sort_order: song.sort_order }).eq('id', song.id).eq('user_id', currentUser.id); 
                 });
                 await Promise.all(updatePromises);
-                showToast("✅ 歌曲排序已成功更新！");
+                showToast("✅ 歌曲排序已成功儲存至資料庫！");
             } catch (err) {
                 alert(`❌ 儲存排序時發生錯誤：\n${err.message}`);
             }
@@ -1227,7 +1258,6 @@
             try {
                 showToast("⏳ 正在將播放列表同步至雲端...", 1000); 
 
-                // 只刪除當前登入用戶的播放列表資料
                 const { error: deleteError } = await supabaseClient.from('saved_playlist').delete().eq('user_id', currentUser.id); 
                 if (deleteError) throw deleteError;
                 
@@ -1235,10 +1265,10 @@
                     id: Date.now() + index, 
                     ytId: song.ytId,
                     title: song.title,
-                    singer: song.singer || "", // 播放列表也存入歌手
+                    singer: song.singer || "", 
                     sort_order: index,
                     lyrics: song.lyrics || "",
-                    user_id: currentUser.id // 綁定使用者
+                    user_id: currentUser.id 
                 }));
 
                 if (insertData.length > 0) {
@@ -1257,7 +1287,7 @@
                 const { data, error } = await supabaseClient
                     .from('saved_playlist')
                     .select('*')
-                    .eq('user_id', currentUser.id) // 確保只抓自己的列表
+                    .eq('user_id', currentUser.id) 
                     .order('sort_order', { ascending: true });
                 
                 if (error) throw error;
@@ -1276,7 +1306,6 @@
         // 播放、進度條與介面邏輯 
         // =========================================
 
-        // 【修改1】：加入切換單曲循環功能的函式
         function toggleSingleLoop() {
             isSingleLoop = !isSingleLoop;
             const btn = document.getElementById('btn-single-loop');
@@ -1376,7 +1405,6 @@
                         'onReady': (event) => { event.target.playVideo(); },
                         'onStateChange': (event) => { 
                             if (event.data === YT.PlayerState.ENDED) {
-                                // 【修改1】：加入單曲循環判斷
                                 if (isSingleLoop) {
                                     player.seekTo(0);
                                     player.playVideo();
@@ -1391,19 +1419,15 @@
                 player.loadVideoById(song.ytId);
             }
             
-            // === 【修改2】：設定 Media Session API ===
-            // 讓手機在背景或鎖屏時能透過控制中心維持音訊控制與接管播放狀態
+            // 設定 Media Session API 讓手機控制中心能正常顯示及控制
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: song.title,
                     artist: song.singer || '傑斯克的練歌世界'
                 });
                 
-                // 【修正】確保明確執行 player.playVideo() / pauseVideo()
                 navigator.mediaSession.setActionHandler('play', function() { 
                     if (player && typeof player.playVideo === 'function') player.playVideo();
-                    
-                    // 確保靜音背景音軌持續執行不被中斷
                     const bgAudio = document.getElementById('bg-audio-keepalive');
                     if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
                 });
@@ -1426,8 +1450,6 @@
         function togglePlayPause() {
             if (player && typeof player.getPlayerState === 'function') {
                 const state = player.getPlayerState();
-                
-                // 【修改2】：連動背景音軌
                 const bgAudio = document.getElementById('bg-audio-keepalive');
                 
                 if (state === YT.PlayerState.PLAYING) { 
@@ -1564,7 +1586,6 @@
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
                 
-                // 如果是 global-db，依然高亮「歌曲列表」按鈕作為所屬區塊
                 let btnTargetStr = viewName === 'edit' ? '新增與編輯' : '歌曲列表';
                 const activeBtn = Array.from(document.querySelectorAll('.toolbar button')).find(btn => btn.innerText.includes(btnTargetStr));
                 if(activeBtn) activeBtn.classList.add('active');
@@ -1587,7 +1608,6 @@
                 const card = document.createElement('div');
                 card.className = 'song-card';
                 
-                // 將歌手字體微微放大至 12px
                 let singerHtml = song.singer ? `<span style="font-size:12px; color:#4facfe; margin-bottom:2px;">${song.singer}</span>` : '';
 
                 card.innerHTML = `
@@ -1644,7 +1664,6 @@
                 li.draggable = true;
                 li.dataset.index = index;
                 if (index === currentPlayIndex) li.classList.add('playing');
-                // 在播放列表顯示時加上歌手名稱
                 let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
                 li.innerHTML = `
                     <div class="drag-handle-playlist" title="按住拖曳">☰</div>
