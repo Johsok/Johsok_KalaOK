@@ -542,6 +542,11 @@
         let playlist = []; 
         let currentPlayIndex = -1;
         let player = null;
+        
+        // [新增] Web Audio API 建立音訊上下文，協助系統判定網頁擁有背景音訊權限
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // [新增] 紀錄使用者是否主動點擊了暫停
+        let isIntendedPause = false; 
 
         let loopStart = null;
         let loopEnd = null;
@@ -653,10 +658,14 @@
         }
 
         function initApp() {
-            document.body.addEventListener('click', function() {
+            // [新增] 強制解鎖 Web Audio Context 並聯動底層無聲音樂，告知系統我們是媒體服務
+            const unlockAudio = () => {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
                 const bgAudio = document.getElementById('bg-audio-keepalive');
                 if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
-            }, { once: true });
+            };
+            document.body.addEventListener('click', unlockAudio, { once: true });
+            document.body.addEventListener('touchstart', unlockAudio, { once: true });
 
             const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
             if (isTouchDevice) {
@@ -722,31 +731,23 @@
             initApp();
         }
 
-        // === iOS Safari 背景播放機制 ===
+        // === 背景播放機制防護網 (Visibility Change) ===
         let wasPlayingBeforeHidden = false;
-        let iosBgInterval = null;
 
         document.addEventListener('visibilitychange', () => {
             const bgAudio = document.getElementById('bg-audio-keepalive');
             if (document.hidden) {
+                // 離開瀏覽器時，紀錄 YouTube 是否正在播放中
                 if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                     wasPlayingBeforeHidden = true;
+                    // 確保 Web Audio 喚醒用的背景音保持播放
                     if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
-                    
-                    iosBgInterval = setInterval(() => {
-                        if (player && typeof player.playVideo === 'function') {
-                            player.playVideo();
-                        }
-                    }, 1000);
                 } else {
                     wasPlayingBeforeHidden = false;
                 }
             } else {
-                if (iosBgInterval) {
-                    clearInterval(iosBgInterval);
-                    iosBgInterval = null;
-                }
-                if (wasPlayingBeforeHidden && player && typeof player.playVideo === 'function') {
+                // 返回瀏覽器時，若原本應該要播放卻因為某些原因被系統殺掉暫停，強制補播放
+                if (wasPlayingBeforeHidden && player && typeof player.getPlayerState === 'function' && player.getPlayerState() !== YT.PlayerState.PLAYING) {
                     player.playVideo();
                 }
             }
@@ -868,7 +869,6 @@
                 showToast("⏳ 正在加入到我的歌曲庫...", 1000);
                 const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                 
-                // 【核心修正】：移除假 ID，交給資料庫原生生成
                 const newSong = { 
                     title: songToAdd.title, 
                     singer: songToAdd.singer || "", 
@@ -892,7 +892,6 @@
         }
         // === 結束：公共資料庫相關功能 ===
 
-        // === 【深度修復 Bug 2】：徹底解決編輯失敗與 ID 不匹配問題 ===
         async function saveSong() {
             if (!currentUser) return alert("請先登入！"); 
 
@@ -910,7 +909,6 @@
                 showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
-                    // 【核心修正】：利用 .select() 取得回傳值，確保資料真的被 Update，而不是因爲 ID 錯誤而靜默失敗 (影響 0 筆)
                     const { data, error } = await supabaseClient
                         .from('songs')
                         .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) 
@@ -919,12 +917,10 @@
                         .select();
 
                     if (error) throw error;
-                    // 如果沒找到該 ID 或無權限，資料庫不會報錯但回傳空陣列，需手動攔截
                     if (!data || data.length === 0) {
                         throw new Error("更新失敗：找不到該首歌曲，可能已不存在或無權限修改。");
                     }
 
-                    // 樂觀更新：直接同步本地陣列資料，避免畫面跳轉時遇到資料庫快取延遲
                     const sIndex = songs.findIndex(s => s.id === editingSongId);
                     if (sIndex > -1) {
                         songs[sIndex].title = title;
@@ -935,7 +931,6 @@
 
                     showToast("✅ 歌曲資料已成功更新！");
                     
-                    // 重置表單狀態
                     editingSongId = null;
                     document.getElementById('edit-singer').value = '';
                     document.getElementById('edit-title').value = '';
@@ -947,18 +942,15 @@
                 } else {
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
-                    // 【核心修正】：絕不寫入本地的假 ID (Date.now())，交給資料庫生成真實 ID，才不會造成後續編輯的尋找錯誤！
                     const newSong = { 
                         title: title, singer: singer, ytId: ytId, lyrics: lyrics, 
                         sort_order: maxOrder + 1,
                         user_id: currentUser.id 
                     };
                     
-                    // 加上 .select() 直接取得包含真正「資料庫流水號 ID」的完整物件
                     const { data, error } = await supabaseClient.from('songs').insert([newSong]).select();
                     if (error) throw error;
 
-                    // 將帶有真實 ID 的資料放進本地陣列
                     if (data && data.length > 0) {
                         songs.push(data[0]);
                     }
@@ -970,7 +962,6 @@
                     showToast("🎉 歌曲已成功新增！");
                 }
                 
-                // 由於已經執行了樂觀更新 (同步修改陣列)，直接呼叫渲染並切換畫面即可
                 renderSongGrid();
                 renderEditSongList();
                 switchView('songs'); 
@@ -1114,7 +1105,6 @@
 
                     const startOrder = songs.length;
 
-                    // 【核心修正】：移除自訂 ID
                     const insertData = newSongs.map((s, i) => {
                         let ytUrl = s.ytUrl || s.youtubeUrl || s.url || s.link || "";
                         let yID = extractVideoID(ytUrl);
@@ -1248,18 +1238,14 @@
             });
         }
 
-        // === 【深度修復 Bug 1】：最穩定的循序儲存排序 ===
         async function saveSongOrder() {
             if (!currentUser) return;
             if (songs.length === 0) return;
             try {
                 showToast("⏳ 正在儲存歌曲排序，請稍候...", 2000); 
                 
-                // 1. 先將最新排列過後的索引號寫入陣列屬性
                 songs.forEach((song, index) => { song.sort_order = index; });
 
-                // 2. 放棄易引發衝突與限制的 upsert 及 Promise.all。改用最穩定的一筆筆循序寫入。
-                // 由於只更新一個欄位 (sort_order)，處理 30~50 首歌通常只需極短時間，且保證 100% 寫入無缺漏。
                 for (const song of songs) {
                     const { error } = await supabaseClient
                         .from('songs')
@@ -1275,7 +1261,6 @@
 
                 showToast("✅ 歌曲排序已成功儲存至資料庫！", 2500);
 
-                // 3. 畫面已與內部陣列同步，無需重新 fetch，直接更新畫面節點即可
                 renderSongGrid();
                 renderEditSongList();
             } catch (err) {
@@ -1295,7 +1280,6 @@
                 const { error: deleteError } = await supabaseClient.from('saved_playlist').delete().eq('user_id', currentUser.id); 
                 if (deleteError) throw deleteError;
                 
-                // 【修正】：不夾帶假 ID，讓新紀錄交由 DB 自動配置
                 const insertData = playlist.map((song, index) => ({
                     ytId: song.ytId,
                     title: song.title,
@@ -1416,7 +1400,9 @@
                 showToast("⚠️ YouTube 播放器尚未準備好，請稍等一秒再試...", 3000);
                 return;
             }
-
+            
+            // [新增] 每次換歌時，重置手動暫停狀態，讓 YouTube 正常連播
+            isIntendedPause = false;
             currentPlayIndex = index;
             const song = playlist[index];
             switchView('youtube'); 
@@ -1438,6 +1424,29 @@
                     events: {
                         'onReady': (event) => { event.target.playVideo(); },
                         'onStateChange': (event) => { 
+                            // ====================================================
+                            // [新增的核心邏輯] 強烈抵抗 YouTube 自動背景暫停功能
+                            // ====================================================
+                            if (event.data === YT.PlayerState.PAUSED) {
+                                // 如果「不是」使用者主動按下暫停按鈕，且網頁現在被隱藏 (退至桌面或鎖屏)
+                                if (!isIntendedPause && document.hidden) {
+                                    console.log("偵測到背景被系統自動暫停，強制喚醒！");
+                                    setTimeout(() => {
+                                        if (player && typeof player.playVideo === 'function') {
+                                            player.playVideo();
+                                        }
+                                    }, 100);
+                                }
+                            }
+
+                            if (event.data === YT.PlayerState.PLAYING) {
+                                // 若播放成功，取消手動暫停標記
+                                isIntendedPause = false; 
+                                // 同時播放無聲底噪，欺騙 iOS / Android 系統我們擁有音頻優先權
+                                const bgAudio = document.getElementById('bg-audio-keepalive');
+                                if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
+                            }
+
                             if (event.data === YT.PlayerState.ENDED) {
                                 if (isSingleLoop) {
                                     player.seekTo(0);
@@ -1453,7 +1462,7 @@
                 player.loadVideoById(song.ytId);
             }
             
-            // 設定 Media Session API 讓手機控制中心能正常顯示及控制
+            // 設定 Media Session API 讓手機控制中心能正常顯示及控制，並防止系統殺除背景
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: song.title,
@@ -1461,11 +1470,13 @@
                 });
                 
                 navigator.mediaSession.setActionHandler('play', function() { 
+                    isIntendedPause = false; // [修改] 鎖屏按下播放，解除手動暫停狀態
                     if (player && typeof player.playVideo === 'function') player.playVideo();
                     const bgAudio = document.getElementById('bg-audio-keepalive');
                     if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
                 });
                 navigator.mediaSession.setActionHandler('pause', function() { 
+                    isIntendedPause = true; // [修改] 鎖屏按下暫停，標記為手動暫停
                     if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
                 });
                 navigator.mediaSession.setActionHandler('nexttrack', function() { playNext(); });
@@ -1487,8 +1498,11 @@
                 const bgAudio = document.getElementById('bg-audio-keepalive');
                 
                 if (state === YT.PlayerState.PLAYING) { 
+                    isIntendedPause = true; // [新增] 標記為使用者主動操作暫停
                     player.pauseVideo(); 
+                    if (bgAudio && !bgAudio.paused) bgAudio.pause();
                 } else { 
+                    isIntendedPause = false; // [新增] 取消手動暫停標記
                     player.playVideo(); 
                     if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
                 }
