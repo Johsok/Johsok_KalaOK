@@ -579,6 +579,8 @@
         let currentLyricsTimed = null;
         /** @type {number} 目前高亮中的歌詞行索引 */
         let activeLyricIndex = -1;
+        /** @type {number|null} 時間軸歌詞同步用的 animation frame id */
+        let lyricsSyncRafId = null;
 
         /** @type {string[]} Gemini 模型優先序（404 時自動嘗試下一個） */
         const GEMINI_MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-flash-latest'];
@@ -1947,7 +1949,6 @@
                         currentTimeDisplay.innerText = formatTime(currentTime);
                         document.getElementById('yt-duration').innerText = formatTime(duration);
                     }
-                    syncTimedLyricsDisplay(currentTime);
                 }
             }, 500);
         }
@@ -2003,6 +2004,7 @@
                             // [新增的核心邏輯] 強烈抵抗 YouTube 自動背景暫停功能
                             // ====================================================
                             if (event.data === YT.PlayerState.PAUSED) {
+                                stopLyricsSyncLoop();
                                 // 如果「不是」使用者主動按下暫停按鈕，且網頁現在被隱藏 (退至桌面或鎖屏)
                                 if (!isIntendedPause && document.hidden) {
                                     console.log("偵測到背景被系統自動暫停，強制喚醒！");
@@ -2020,6 +2022,7 @@
                                 // 同時播放無聲底噪，欺騙 iOS / Android 系統我們擁有音頻優先權
                                 const bgAudio = document.getElementById('bg-audio-keepalive');
                                 if (bgAudio && bgAudio.paused) bgAudio.play().catch(e => console.log(e));
+                                startLyricsSyncLoop();
                             }
 
                             if (event.data === YT.PlayerState.ENDED) {
@@ -2208,7 +2211,9 @@
                 lyricsBtn.classList.add('active');
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
+                stopLyricsSyncLoop();
             } else {
+                stopLyricsSyncLoop();
                 lyricsBtn.title = "進歌詞";
                 lyricsBtn.innerText = "看歌詞";
                 
@@ -2377,20 +2382,34 @@
         }
 
         /**
-         * 依播放時間高亮歌詞行並自動捲動；時間過後移除高亮。
-         * @param {number} currentTime 目前播放秒數
+         * 停止依各行 LRC 時間同步歌詞的迴圈。
          */
-        function syncTimedLyricsDisplay(currentTime) {
-            if (!currentLyricsTimed) return;
-            const viewLyrics = document.getElementById('view-lyrics');
-            if (!viewLyrics || !viewLyrics.classList.contains('active')) return;
-            if (currentTime === null || currentTime === undefined || isNaN(currentTime)) return;
+        function stopLyricsSyncLoop() {
+            if (lyricsSyncRafId !== null) {
+                cancelAnimationFrame(lyricsSyncRafId);
+                lyricsSyncRafId = null;
+            }
+        }
 
-            let newIndex = -1;
-            currentLyricsTimed.lines.forEach((line, index) => {
-                if (line.time !== null && line.time <= currentTime) newIndex = index;
+        /**
+         * 依播放秒數找出應高亮的歌詞行（對應該行 [mm:ss.xx] 時間戳）。
+         * @param {number} currentTime
+         * @returns {number}
+         */
+        function getTimedLyricIndexAtTime(currentTime) {
+            if (!currentLyricsTimed) return -1;
+            let index = -1;
+            currentLyricsTimed.lines.forEach((line, i) => {
+                if (line.time !== null && line.time <= currentTime) index = i;
             });
+            return index;
+        }
 
+        /**
+         * 高亮指定歌詞行並捲動至視野（僅在切換至新行時捲動）。
+         * @param {number} newIndex
+         */
+        function applyTimedLyricLine(newIndex) {
             if (newIndex === activeLyricIndex) return;
 
             const container = document.getElementById('lyrics-content');
@@ -2406,7 +2425,68 @@
             activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
 
+        /**
+         * 播放中持續比對播放時間與各行 LRC 時間戳，到達該行時間才捲動／高亮。
+         */
+        function lyricsSyncTick() {
+            lyricsSyncRafId = null;
+            if (!currentLyricsTimed) return;
+
+            const viewLyrics = document.getElementById('view-lyrics');
+            if (!viewLyrics || !viewLyrics.classList.contains('active')) return;
+
+            if (!player || typeof player.getCurrentTime !== 'function') return;
+            if (typeof YT !== 'undefined' && player.getPlayerState &&
+                player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                return;
+            }
+
+            applyTimedLyricLine(getTimedLyricIndexAtTime(player.getCurrentTime()));
+            lyricsSyncRafId = requestAnimationFrame(lyricsSyncTick);
+        }
+
+        /**
+         * 開始依每行歌詞時間戳同步（播放中且在看歌詞畫面時）。
+         */
+        function startLyricsSyncLoop() {
+            stopLyricsSyncLoop();
+            if (!currentLyricsTimed) return;
+            const viewLyrics = document.getElementById('view-lyrics');
+            if (!viewLyrics || !viewLyrics.classList.contains('active')) return;
+            if (!player || typeof player.getCurrentTime !== 'function') return;
+            if (typeof YT !== 'undefined' && player.getPlayerState &&
+                player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                return;
+            }
+            applyTimedLyricLine(getTimedLyricIndexAtTime(player.getCurrentTime()));
+            lyricsSyncRafId = requestAnimationFrame(lyricsSyncTick);
+        }
+
+        /**
+         * 立即依播放時間對齊歌詞行；若正在播放則啟動逐行時間同步迴圈。
+         * @param {number} currentTime 目前播放秒數
+         */
+        function syncTimedLyricsDisplay(currentTime) {
+            if (!currentLyricsTimed) return;
+            const viewLyrics = document.getElementById('view-lyrics');
+            if (!viewLyrics || !viewLyrics.classList.contains('active')) {
+                stopLyricsSyncLoop();
+                return;
+            }
+            if (currentTime === null || currentTime === undefined || isNaN(currentTime)) return;
+
+            applyTimedLyricLine(getTimedLyricIndexAtTime(currentTime));
+
+            if (typeof YT !== 'undefined' && player && player.getPlayerState &&
+                player.getPlayerState() === YT.PlayerState.PLAYING) {
+                startLyricsSyncLoop();
+            } else {
+                stopLyricsSyncLoop();
+            }
+        }
+
         function updateLyricsView() {
+            stopLyricsSyncLoop();
             const container = document.getElementById('lyrics-content');
             container.classList.remove('lyrics-timed');
             currentLyricsTimed = null;
