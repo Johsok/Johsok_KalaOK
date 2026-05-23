@@ -559,6 +559,12 @@
 
         let isSingleLoop = false; 
 
+        /** @type {string[]} Gemini 模型優先序（404 時自動嘗試下一個） */
+        const GEMINI_MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-flash-latest'];
+
+        /** @type {string} Gemini API Key（內建，無需手動輸入） */
+        const GEMINI_API_KEY = 'AIzaSyAOl5J2qWHSqrNRvos_oJtJFfK293wuSRk';
+
         // 核心 API 處理工具
         const fetchWithRetry = async (url, options, retries = 3) => {
             let delay = 1000;
@@ -647,14 +653,12 @@
             }
         }
 
-        async function getGeminiApiKey(forcePrompt = false) {
-            let key = localStorage.getItem('gemini_api_key');
-            if (!key || forcePrompt) {
-                key = prompt("請輸入您的 Gemini API Key：\n(輸入後會自動記憶在電腦中，後續無須重複輸入)");
-                if (!key) return null;
-                localStorage.setItem('gemini_api_key', key);
-            }
-            return key;
+        /**
+         * 取得 Gemini API Key（使用內建常數）。
+         * @returns {string}
+         */
+        function getGeminiApiKey() {
+            return GEMINI_API_KEY;
         }
 
         function initApp() {
@@ -1032,10 +1036,184 @@
         // =========================================
         // AI 自動找歌
         // =========================================
+
+        /**
+         * 建立 Gemini generateContent 的 generationConfig（強制 JSON 陣列輸出）。
+         * @returns {object}
+         */
+        function buildGeminiGenerationConfig() {
+            return {
+                responseMimeType: 'application/json',
+                maxOutputTokens: 16384,
+                responseSchema: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            singer: { type: 'STRING' },
+                            title: { type: 'STRING' },
+                            ytUrl: { type: 'STRING' },
+                            lyrics: { type: 'STRING' }
+                        },
+                        required: ['singer', 'title', 'ytUrl', 'lyrics']
+                    }
+                }
+            };
+        }
+
+        /**
+         * 建立 Gemini API 請求 payload。
+         * @param {string} promptText
+         * @returns {object}
+         */
+        function buildGeminiPayload(promptText) {
+            return {
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: buildGeminiGenerationConfig()
+            };
+        }
+
+        /**
+         * 從 Gemini generateContent 回應取出文字，並處理安全阻擋。
+         * @param {object} data - API 回應 JSON
+         * @returns {string}
+         */
+        function extractGeminiText(data) {
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) return text;
+
+            const blockReason = data.promptFeedback?.blockReason;
+            if (blockReason) {
+                throw new Error('內容被安全政策阻擋，請稍後重試或減少歌詞要求');
+            }
+            const finishReason = data.candidates?.[0]?.finishReason;
+            if (finishReason === 'SAFETY') {
+                throw new Error('內容被安全政策阻擋，請稍後重試或減少歌詞要求');
+            }
+            throw new Error('AI 未回傳有效內容，請稍後再試。');
+        }
+
+        /**
+         * 判斷是否為 Gemini 模型不存在錯誤（可嘗試下一個模型）。
+         * @param {Error} err
+         * @returns {boolean}
+         */
+        function isGeminiModelNotFoundError(err) {
+            const msg = (err && err.message) ? err.message : '';
+            return msg.includes('not found') || msg.includes('404');
+        }
+
+        /**
+         * 依模型優先序呼叫 Gemini generateContent。
+         * @param {string} apiKey
+         * @param {string} promptText
+         * @returns {Promise<object>}
+         */
+        async function callGeminiGenerate(apiKey, promptText) {
+            const payload = buildGeminiPayload(promptText);
+            const requestOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            for (const modelName of GEMINI_MODEL_CANDIDATES) {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+                try {
+                    return await fetchWithRetry(url, requestOptions);
+                } catch (err) {
+                    const msg = err.message || '';
+                    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('API 配額或速率限制，請稍後再試');
+                    }
+                    if (isGeminiModelNotFoundError(err)) continue;
+                    throw err;
+                }
+            }
+            throw new Error('Gemini 模型不可用，請聯絡管理員更新模型清單');
+        }
+
+        /**
+         * 建立 AI 找歌用的 prompt。
+         * @param {string} currentTitles - 已有歌名，逗號分隔
+         * @returns {string}
+         */
+        function buildAiSongPrompt(currentTitles) {
+            const avoidList = currentTitles || '（目前歌曲庫為空）';
+            return `請基於你的內部知識庫，推薦 3 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
+⚠️ 條件嚴格限制：
+1. 語言限制：只能是「國語(中文)」歌曲，絕對不要包含台語歌、粵語歌、英語歌或國外歌曲。
+2. 真實連結："ytUrl" 必須是標準 YouTube 網址（https://www.youtube.com/watch?v=...），不可捏造 11 碼 video ID。
+3. 歌詞："lyrics" 須包含完整主歌與副歌（可省略間奏重複段），勿輸出過長重複段落。
+4. 不可重複：不要與以下歌曲重複：${avoidList}。
+5. 只回傳 JSON 陣列，不要 Markdown 或說明文字。格式：[{"singer":"...","title":"...","ytUrl":"...","lyrics":"..."}]`;
+        }
+
+        /**
+         * 解析 Gemini 回傳的 JSON 歌曲陣列。
+         * @param {string} textResult
+         * @param {string|undefined} finishReason
+         * @returns {object[]}
+         */
+        function parseGeminiSongsJson(textResult, finishReason) {
+            const cleanedText = textResult.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+            if (cleanedText.startsWith('[') && !cleanedText.endsWith(']')) {
+                throw new Error('回應過長被截斷，請再試一次');
+            }
+            try {
+                const parsed = JSON.parse(cleanedText);
+                if (!Array.isArray(parsed)) throw new Error('AI 回傳格式不是陣列');
+                if (parsed.length === 0) throw new Error('AI 未找到符合條件的新歌，請重試');
+                return parsed;
+            } catch (parseErr) {
+                if (parseErr.message && (
+                    parseErr.message.includes('不是陣列') ||
+                    parseErr.message.includes('未找到') ||
+                    parseErr.message.includes('截斷')
+                )) {
+                    throw parseErr;
+                }
+                console.error('【JSON 解析失敗】finishReason:', finishReason, 'preview:', textResult.substring(0, 500));
+                throw new Error('AI 產生的資料格式發生異常，請重試。');
+            }
+        }
+
+        /**
+         * 將 AI 回傳項目轉為可寫入 Supabase 的列（略過無效 YouTube ID）。
+         * @param {object[]} newSongs
+         * @param {number} startOrder
+         * @returns {{ insertData: object[], skippedCount: number }}
+         */
+        function buildSongsInsertData(newSongs, startOrder) {
+            const insertData = [];
+            let skippedCount = 0;
+            let orderOffset = 0;
+
+            for (const s of newSongs) {
+                const ytUrl = s.ytUrl || s.youtubeUrl || s.url || s.link || '';
+                const yID = extractVideoID(ytUrl);
+                if (!yID || yID.length !== 11) {
+                    skippedCount++;
+                    continue;
+                }
+
+                insertData.push({
+                    singer: s.singer || s.artist || '',
+                    title: s.title || s.name || '未知歌曲',
+                    ytId: yID,
+                    lyrics: s.lyrics || s.lyric || s.text || '暫無歌詞',
+                    sort_order: startOrder + orderOffset,
+                    user_id: currentUser.id
+                });
+                orderOffset++;
+            }
+
+            return { insertData, skippedCount };
+        }
+
         async function autoAddSongs() {
             if (!currentUser) return;
-            const apiKey = await getGeminiApiKey();
-            if (!apiKey) return;
+            const apiKey = getGeminiApiKey();
 
             const aiStatusText = document.getElementById('ai-status-text');
             const btnAiAdd = document.getElementById('btn-ai-add');
@@ -1050,91 +1228,45 @@
             btnAiAdd.style.opacity = '0.5';
             btnAiAdd.style.cursor = 'not-allowed';
 
-            const currentTitles = songs.map(s => s.title).join(", ");
-            
-            const promptText = `請基於你的內部知識庫，推薦 5 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
-⚠️ 條件嚴格限制：
-1. 語言限制：只能是「國語(中文)」歌曲，絕對拒絕且不要包含台語歌、粵語歌、英語歌或國外歌曲！
-2. 真實連結："ytUrl" 必須是真實存在的 YouTube 影片網址 (例如 https://www.youtube.com/watch?v=...)。絕對不可隨機捏造亂碼！
-3. 完整歌詞："lyrics" 必須是【完整無刪減】的整首歌詞。
-4. 不可重複：絕對不要與以下歌曲重複：${currentTitles}。
-
-請只回傳「純 JSON 陣列」，不要包含 \`\`\`json 標籤或任何 Markdown，直接回傳如 [{"singer":"...","title":"...","ytUrl":"...","lyrics":"..."}] 即可。`;
+            const currentTitles = songs.map(s => s.title).join(', ');
+            const promptText = buildAiSongPrompt(currentTitles);
 
             try {
-                const modelName = 'gemini-1.5-flash'; 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-                
-                const payload = {
-                    contents: [{ parts: [{ text: promptText }] }],
-                    generationConfig: { 
-                        response_mime_type: "application/json", 
-                        maxOutputTokens: 8192 
-                    }
-                };
+                const data = await callGeminiGenerate(apiKey, promptText);
+                const finishReason = data.candidates?.[0]?.finishReason;
+                const textResult = extractGeminiText(data);
+                const newSongs = parseGeminiSongsJson(textResult, finishReason);
 
-                const data = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                let textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!textResult) throw new Error("AI 未回傳有效內容，請稍後再試。");
-                
-                let cleanedText = textResult.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
-
-                let newSongs;
-                try {
-                    newSongs = JSON.parse(cleanedText);
-                } catch (parseErr) {
-                    console.error("【JSON 解析失敗】", textResult);
-                    throw new Error("AI 產生的資料格式發生異常，請重試。");
+                if (songs.length > 0) {
+                    const fixPromises = songs.map((s, idx) => {
+                        if (s.sort_order !== idx) {
+                            return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id).eq('user_id', currentUser.id);
+                        }
+                        return null;
+                    }).filter(p => p !== null);
+                    if (fixPromises.length > 0) await Promise.all(fixPromises);
                 }
 
-                if (Array.isArray(newSongs) && newSongs.length > 0) {
-                    if (songs.length > 0) {
-                        const fixPromises = songs.map((s, idx) => {
-                            if (s.sort_order !== idx) {
-                                return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id).eq('user_id', currentUser.id);
-                            }
-                            return null;
-                        }).filter(p => p !== null);
-                        if (fixPromises.length > 0) await Promise.all(fixPromises);
-                    }
+                const startOrder = songs.length;
+                const { insertData, skippedCount } = buildSongsInsertData(newSongs, startOrder);
 
-                    const startOrder = songs.length;
-
-                    const insertData = newSongs.map((s, i) => {
-                        let ytUrl = s.ytUrl || s.youtubeUrl || s.url || s.link || "";
-                        let yID = extractVideoID(ytUrl);
-                        if (!yID || yID.length !== 11) yID = "dQw4w9WgXcQ"; 
-                        
-                        let singer = s.singer || s.artist || ""; 
-                        let title = s.title || s.name || "未知歌曲";
-                        let lyrics = s.lyrics || s.lyric || s.text || "暫無歌詞";
-
-                        return {
-                            singer: singer, 
-                            title: title,
-                            ytId: yID,
-                            lyrics: lyrics,
-                            sort_order: startOrder + i,
-                            user_id: currentUser.id 
-                        };
-                    });
-
-                    const { error } = await supabaseClient.from('songs').insert(insertData);
-                    if (error) throw new Error(`資料庫寫入失敗: ${error.message || '未知錯誤'}`);
-
-                    aiStatusText.innerHTML = `✅ 已抓完 ${insertData.length} 首新歌`;
-                    aiStatusText.style.color = '#38ef7d';
-                    aiStatusText.style.background = 'rgba(56, 239, 125, 0.1)';
-                    aiStatusText.style.border = '1px solid rgba(56, 239, 125, 0.3)';
-                    setTimeout(() => { aiStatusText.style.display = 'none'; }, 5000);
-
-                    await fetchSongsFromSupabase(); 
+                if (insertData.length === 0) {
+                    throw new Error('AI 回傳的 YouTube 連結皆無效，請重試');
                 }
+
+                const { error } = await supabaseClient.from('songs').insert(insertData);
+                if (error) throw new Error(`資料庫寫入失敗: ${error.message || '未知錯誤'}`);
+
+                let successMsg = `✅ 已新增 ${insertData.length} 首新歌`;
+                if (skippedCount > 0) successMsg += `（略過 ${skippedCount} 首無效連結）`;
+                aiStatusText.innerHTML = successMsg;
+                aiStatusText.style.color = '#38ef7d';
+                aiStatusText.style.background = 'rgba(56, 239, 125, 0.1)';
+                aiStatusText.style.border = '1px solid rgba(56, 239, 125, 0.3)';
+                setTimeout(() => { aiStatusText.style.display = 'none'; }, 5000);
+
+                showToast(successMsg, 3000);
+                await fetchSongsFromSupabase();
 
             } catch (err) {
                 console.error(err);
@@ -1146,8 +1278,9 @@
                 aiStatusText.style.border = '1px solid rgba(255, 75, 43, 0.3)';
                 setTimeout(() => { aiStatusText.style.display = 'none'; }, 5000);
 
-                if (err.message.includes("API key not valid") || err.message.includes("API Key")) {
-                    localStorage.removeItem('gemini_api_key');
+                const msg = err.message || '';
+                if (msg.includes('API key not valid') || msg.includes('API Key') || msg.includes('API_KEY_INVALID')) {
+                    showToast('Gemini API Key 無效，請聯絡管理員更新設定', 3000);
                 }
             } finally {
                 btnAiAdd.disabled = false;
