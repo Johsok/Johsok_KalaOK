@@ -273,7 +273,8 @@
             border-top: 1px solid rgba(255,255,255,0.05);
         }
         #yt-progress-bar {
-            -webkit-appearance: none; width: 100%; height: 5px; border-radius: 3px;
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 5px; border-radius: 3px;
             background: rgba(255,255,255,0.2); outline: none; cursor: pointer;
         }
         #yt-progress-bar::-webkit-slider-thumb {
@@ -1870,7 +1871,7 @@
             const { editedSongId, previousYtId, reloadPlayerIfPlaying = true } = options;
             if (!playlist.length) return false;
 
-            const previousYtId = currentPlayIndex >= 0 && playlist[currentPlayIndex]
+            const playingYtIdBeforeSync = currentPlayIndex >= 0 && playlist[currentPlayIndex]
                 ? playlist[currentPlayIndex].ytId
                 : null;
             let anyUpdated = false;
@@ -1918,7 +1919,7 @@
                 updateLyricsView();
                 const current = playlist[currentPlayIndex];
                 if (reloadPlayerIfPlaying && player && current?.ytId &&
-                    current.ytId.length === 11 && current.ytId !== previousYtId &&
+                    current.ytId.length === 11 && current.ytId !== playingYtIdBeforeSync &&
                     typeof player.loadVideoById === 'function') {
                     player.loadVideoById(current.ytId);
                 }
