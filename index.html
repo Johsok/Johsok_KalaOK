@@ -1423,6 +1423,8 @@
                     playerVars: { 'autoplay': 1, 'enablejsapi': 1, 'origin': origin, 'rel': 0, 'playsinline': 1 },
                     events: {
                         'onReady': (event) => { event.target.playVideo(); },
+                        /** 影片無法播放（不存在、禁止嵌入等）時自動切下一首 */
+                        'onError': () => { playNext(); },
                         'onStateChange': (event) => { 
                             // ====================================================
                             // [新增的核心邏輯] 強烈抵抗 YouTube 自動背景暫停功能
