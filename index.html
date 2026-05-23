@@ -568,6 +568,8 @@
         let supabaseClient = null;
         /** @type {boolean} 是否已註冊 auth 狀態監聽 */
         let supabaseAuthInitialized = false;
+        /** @type {Promise<boolean>|null} 避免登入時重複並行載入歌曲庫 */
+        let userLibraryLoadInFlight = null;
 
         let currentUser = null; 
         let songs = []; 
@@ -644,6 +646,45 @@
         }
 
         /**
+         * 將 session 寫入 Supabase 客戶端，確保後續查詢帶有使用者 JWT（RLS 才會放行）。
+         * @param {object} session
+         * @returns {Promise<void>}
+         */
+        async function syncAuthSessionToClient(session) {
+            if (!session?.access_token || !session?.refresh_token) return;
+            const { error } = await supabaseClient.auth.setSession({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token
+            });
+            if (error) throw error;
+        }
+
+        /**
+         * 登入後載入專屬歌曲庫與雲端播放列表。
+         * @returns {Promise<boolean>}
+         */
+        async function loadUserLibraryAfterLogin() {
+            if (!currentUser) return false;
+            if (userLibraryLoadInFlight) return userLibraryLoadInFlight;
+
+            userLibraryLoadInFlight = (async () => {
+                const grid = document.getElementById('song-grid');
+                if (grid) {
+                    grid.innerHTML = '<div style="grid-column: 1 / -1; color: #aaa;">載入歌曲庫中...</div>';
+                }
+                const songsOk = await fetchSongsFromSupabase();
+                await loadPlaylistFromDB();
+                return songsOk;
+            })();
+
+            try {
+                return await userLibraryLoadInFlight;
+            } finally {
+                userLibraryLoadInFlight = null;
+            }
+        }
+
+        /**
          * 依 session 更新登入狀態、遮罩與使用者歌曲庫。
          * @param {object|null} session Supabase Auth session
          */
@@ -652,8 +693,8 @@
                 currentUser = session.user;
                 document.getElementById('auth-overlay').style.display = 'none';
                 document.getElementById('btn-header-logout').style.display = 'block';
-                await fetchSongsFromSupabase();
-                await loadPlaylistFromDB();
+                await syncAuthSessionToClient(session);
+                await loadUserLibraryAfterLogin();
             } else {
                 currentUser = null;
                 document.getElementById('auth-overlay').style.display = 'flex';
@@ -686,7 +727,11 @@
                             }
                             return;
                         }
-                        await applyAuthSession(session);
+                        if (session) {
+                            await applyAuthSession(session);
+                        } else if (event === 'SIGNED_OUT') {
+                            await applyAuthSession(null);
+                        }
                     });
                 }
                 const { data: { session }, error } = await supabaseClient.auth.getSession();
@@ -719,7 +764,7 @@
                     throw new Error('登入失敗：未取得有效登入憑證，請確認信箱是否已完成驗證。');
                 }
                 await applyAuthSession(data.session);
-                showToast("✅ 登入成功！");
+                showToast(`✅ 登入成功！已載入 ${songs.length} 首歌曲`);
             } catch (error) {
                 alert(error.message);
             }
@@ -928,22 +973,40 @@
          */
         async function fetchSongsFromSupabase() {
             if (!currentUser) return false;
+            const grid = document.getElementById('song-grid');
             try {
-                const { data, error } = await supabaseClient
-                    .from('songs')
-                    .select('*')
-                    .eq('user_id', currentUser.id)
-                    .order('sort_order', { ascending: true, nullsFirst: false })
-                    .order('id', { ascending: true }); 
+                let lastError = null;
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    if (!session?.access_token) {
+                        await new Promise((resolve) => setTimeout(resolve, 200));
+                        continue;
+                    }
 
-                if (error) throw error;
-                
-                songs = data || [];
-                renderSongGrid();
-                renderEditSongList();
-                return true;
+                    const { data, error } = await supabaseClient
+                        .from('songs')
+                        .select('*')
+                        .eq('user_id', currentUser.id)
+                        .order('sort_order', { ascending: true, nullsFirst: false })
+                        .order('id', { ascending: true });
+
+                    if (error) {
+                        lastError = error;
+                        await new Promise((resolve) => setTimeout(resolve, 200));
+                        continue;
+                    }
+
+                    songs = data || [];
+                    renderSongGrid();
+                    renderEditSongList();
+                    return true;
+                }
+                throw lastError || new Error('登入憑證尚未就緒，無法讀取歌曲庫');
             } catch (err) {
                 console.error("無法從 Supabase 讀取資料:", err);
+                if (grid) {
+                    grid.innerHTML = `<div style="grid-column: 1 / -1; color: #ff4b2b;">載入歌曲失敗：${err.message}</div>`;
+                }
                 return false;
             }
         }
@@ -1937,13 +2000,13 @@
                     .order('sort_order', { ascending: true });
                 
                 if (error) throw error;
-                
-                if (data && data.length > 0) {
-                    playlist = data;
+
+                playlist = (data && data.length > 0) ? data : [];
+                if (playlist.length > 0) {
                     syncPlaylistFromSongs({ reloadPlayerIfPlaying: false });
-                    renderPlaylist();
-                    showToast("☁️ 已成功從雲端資料庫載入您的播放列表");
+                    showToast(`☁️ 已載入播放列表（${playlist.length} 首）`);
                 }
+                renderPlaylist();
             } catch(e) {
                 console.warn("無法從雲端載入播放列表", e);
             }
