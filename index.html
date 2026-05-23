@@ -913,25 +913,13 @@
                 showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
-                    const { data, error } = await supabaseClient
+                    const { error } = await supabaseClient
                         .from('songs')
-                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics }) 
+                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics })
                         .eq('id', editingSongId)
-                        .eq('user_id', currentUser.id)
-                        .select();
+                        .eq('user_id', currentUser.id);
 
                     if (error) throw error;
-                    if (!data || data.length === 0) {
-                        throw new Error("更新失敗：找不到該首歌曲，可能已不存在或無權限修改。");
-                    }
-
-                    const sIndex = songs.findIndex(s => s.id === editingSongId);
-                    if (sIndex > -1) {
-                        songs[sIndex].title = title;
-                        songs[sIndex].singer = singer;
-                        songs[sIndex].ytId = ytId;
-                        songs[sIndex].lyrics = lyrics;
-                    }
 
                     showToast("✅ 歌曲資料已成功更新！");
                     
@@ -952,12 +940,8 @@
                         user_id: currentUser.id 
                     };
                     
-                    const { data, error } = await supabaseClient.from('songs').insert([newSong]).select();
+                    const { error } = await supabaseClient.from('songs').insert([newSong]);
                     if (error) throw error;
-
-                    if (data && data.length > 0) {
-                        songs.push(data[0]);
-                    }
 
                     document.getElementById('edit-singer').value = '';
                     document.getElementById('edit-title').value = '';
@@ -965,9 +949,8 @@
                     document.getElementById('edit-lyrics').value = '';
                     showToast("🎉 歌曲已成功新增！");
                 }
-                
-                renderSongGrid();
-                renderEditSongList();
+
+                await fetchSongsFromSupabase();
                 switchView('songs'); 
                 
             } catch (err) {
@@ -976,7 +959,7 @@
         }
 
         function editSong(id) {
-            const song = songs.find(s => s.id === id);
+            const song = songs.find(s => s.id == id);
             if (!song) return;
             
             editingSongId = song.id;
@@ -1038,7 +1021,7 @@
         // =========================================
 
         /**
-         * 建立 Gemini generateContent 的 generationConfig（強制 JSON 陣列輸出）。
+         * 建立 Gemini generateContent 的 generationConfig（強制 JSON 陣列輸出，僅歌詞/metadata）。
          * @returns {object}
          */
         function buildGeminiGenerationConfig() {
@@ -1052,10 +1035,9 @@
                         properties: {
                             singer: { type: 'STRING' },
                             title: { type: 'STRING' },
-                            ytUrl: { type: 'STRING' },
                             lyrics: { type: 'STRING' }
                         },
-                        required: ['singer', 'title', 'ytUrl', 'lyrics']
+                        required: ['singer', 'title', 'lyrics']
                     }
                 }
             };
@@ -1111,6 +1093,28 @@
          */
         async function callGeminiGenerate(apiKey, promptText) {
             const payload = buildGeminiPayload(promptText);
+            return callGeminiGenerateWithPayload(apiKey, payload);
+        }
+
+        /**
+         * 建立含 Google Search grounding 的 Gemini payload（用於搜尋真實 YouTube 連結）。
+         * @param {string} promptText
+         * @returns {object}
+         */
+        function buildGeminiSearchPayload(promptText) {
+            return {
+                contents: [{ parts: [{ text: promptText }] }],
+                tools: [{ google_search: {} }]
+            };
+        }
+
+        /**
+         * 依模型優先序呼叫 Gemini generateContent（自訂 payload）。
+         * @param {string} apiKey
+         * @param {object} payload
+         * @returns {Promise<object>}
+         */
+        async function callGeminiGenerateWithPayload(apiKey, payload) {
             const requestOptions = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1134,6 +1138,16 @@
         }
 
         /**
+         * 使用 Google Search grounding 呼叫 Gemini（搜尋 YouTube 等外部連結）。
+         * @param {string} apiKey
+         * @param {string} promptText
+         * @returns {Promise<object>}
+         */
+        async function callGeminiWithGoogleSearch(apiKey, promptText) {
+            return callGeminiGenerateWithPayload(apiKey, buildGeminiSearchPayload(promptText));
+        }
+
+        /**
          * 建立 AI 找歌用的 prompt。
          * @param {string} currentTitles - 已有歌名，逗號分隔
          * @returns {string}
@@ -1143,10 +1157,111 @@
             return `請基於你的內部知識庫，推薦 3 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對不要包含台語歌、粵語歌、英語歌或國外歌曲。
-2. 真實連結："ytUrl" 必須是標準 YouTube 網址（https://www.youtube.com/watch?v=...），不可捏造 11 碼 video ID。
-3. 歌詞："lyrics" 須包含完整主歌與副歌（可省略間奏重複段），勿輸出過長重複段落。
-4. 不可重複：不要與以下歌曲重複：${avoidList}。
-5. 只回傳 JSON 陣列，不要 Markdown 或說明文字。格式：[{"singer":"...","title":"...","ytUrl":"...","lyrics":"..."}]`;
+2. 歌詞："lyrics" 須包含完整主歌與副歌（可省略間奏重複段），勿輸出過長重複段落。
+3. 不可重複：不要與以下歌曲重複：${avoidList}。
+4. 只回傳 JSON 陣列，不要 Markdown 或說明文字。格式：[{"singer":"...","title":"...","lyrics":"..."}]`;
+        }
+
+        /**
+         * 建立以 Google Search 查詢 YouTube 官方 MV 的 prompt。
+         * @param {string} singer
+         * @param {string} title
+         * @returns {string}
+         */
+        function buildYoutubeLookupPrompt(singer, title) {
+            const query = `${singer || ''} ${title || ''}`.trim();
+            return `請使用 Google 搜尋，在 YouTube 上找到「${query}」的官方 MV、歌詞版或高品質演唱影片。
+只回傳一行 JSON，不要 Markdown：{"ytUrl":"https://www.youtube.com/watch?v=XXXXXXXXXXX"}
+規則：
+1. ytUrl 必須來自搜尋到的真實 YouTube 頁面，不可猜測或捏造 11 碼 video ID。
+2. 優先官方 MV 或播放量高的正版來源。`;
+        }
+
+        /**
+         * 從文字中擷取第一個有效的 YouTube watch 網址。
+         * @param {string} text
+         * @returns {string}
+         */
+        function extractYoutubeWatchUrlFromText(text) {
+            if (!text) return '';
+            const patterns = [
+                /https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[\w-]{11}/gi,
+                /https?:\/\/youtu\.be\/[\w-]{11}/gi,
+                /https?:\/\/(?:www\.)?youtube\.com\/embed\/[\w-]{11}/gi
+            ];
+            for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match && match[0]) {
+                    const id = extractVideoID(match[0]);
+                    if (id && id.length === 11) {
+                        return `https://www.youtube.com/watch?v=${id}`;
+                    }
+                }
+            }
+            return '';
+        }
+
+        /**
+         * 從 Gemini（含 Google Search grounding）回應解析 YouTube watch 網址。
+         * @param {object} data - generateContent API 回應
+         * @returns {string}
+         */
+        function parseYoutubeUrlFromGeminiSearch(data) {
+            const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+            for (const chunk of chunks) {
+                const uri = chunk.web?.uri || '';
+                if (/youtube\.com|youtu\.be/i.test(uri)) {
+                    const id = extractVideoID(uri);
+                    if (id && id.length === 11) {
+                        return `https://www.youtube.com/watch?v=${id}`;
+                    }
+                }
+            }
+
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (!text) return '';
+
+            const cleaned = text.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+            try {
+                const parsed = JSON.parse(cleaned);
+                const url = parsed.ytUrl || parsed.url || parsed.youtubeUrl || '';
+                const id = extractVideoID(url);
+                if (id && id.length === 11) {
+                    return `https://www.youtube.com/watch?v=${id}`;
+                }
+            } catch (_) {
+                /* 非 JSON 時改以正則擷取 */
+            }
+
+            return extractYoutubeWatchUrlFromText(text);
+        }
+
+        /**
+         * 為每首推薦歌曲以 Google Search 解析真實 YouTube 連結。
+         * @param {string} apiKey
+         * @param {object[]} songList
+         * @param {(current: number, total: number, song: object) => void} [onProgress]
+         * @returns {Promise<object[]>}
+         */
+        async function resolveYoutubeUrlsForSongs(apiKey, songList, onProgress) {
+            const results = [];
+            for (let i = 0; i < songList.length; i++) {
+                const song = songList[i];
+                if (onProgress) onProgress(i + 1, songList.length, song);
+                try {
+                    const lookupPrompt = buildYoutubeLookupPrompt(song.singer, song.title);
+                    const searchData = await callGeminiWithGoogleSearch(apiKey, lookupPrompt);
+                    const ytUrl = parseYoutubeUrlFromGeminiSearch(searchData);
+                    results.push({ ...song, ytUrl });
+                } catch (err) {
+                    console.warn('YouTube 搜尋失敗:', song.title, err);
+                    results.push({ ...song, ytUrl: '' });
+                }
+                if (i < songList.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 400));
+                }
+            }
+            return results;
         }
 
         /**
@@ -1235,7 +1350,16 @@
                 const data = await callGeminiGenerate(apiKey, promptText);
                 const finishReason = data.candidates?.[0]?.finishReason;
                 const textResult = extractGeminiText(data);
-                const newSongs = parseGeminiSongsJson(textResult, finishReason);
+                const recommendedSongs = parseGeminiSongsJson(textResult, finishReason);
+
+                aiStatusText.innerHTML = '⏳ 正在搜尋 YouTube 連結...';
+                const newSongs = await resolveYoutubeUrlsForSongs(
+                    apiKey,
+                    recommendedSongs,
+                    (current, total, song) => {
+                        aiStatusText.innerHTML = `⏳ 搜尋 YouTube (${current}/${total})：${song.title || ''}`;
+                    }
+                );
 
                 if (songs.length > 0) {
                     const fixPromises = songs.map((s, idx) => {
