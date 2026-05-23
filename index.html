@@ -1107,23 +1107,22 @@
         // =========================================
 
         /**
-         * 建立 Gemini generateContent 的 generationConfig（強制 JSON 陣列輸出，僅歌詞/metadata）。
+         * 建立 Gemini generateContent 的 generationConfig（僅推薦歌手與歌名；歌詞由搜尋階段取得）。
          * @returns {object}
          */
         function buildGeminiGenerationConfig() {
             return {
                 responseMimeType: 'application/json',
-                maxOutputTokens: 16384,
+                maxOutputTokens: 2048,
                 responseSchema: {
                     type: 'ARRAY',
                     items: {
                         type: 'OBJECT',
                         properties: {
                             singer: { type: 'STRING' },
-                            title: { type: 'STRING' },
-                            lyrics: { type: 'STRING' }
+                            title: { type: 'STRING' }
                         },
-                        required: ['singer', 'title', 'lyrics']
+                        required: ['singer', 'title']
                     }
                 }
             };
@@ -1243,9 +1242,70 @@
             return `請基於你的內部知識庫，推薦 3 首台灣 KTV 歷年來「熱度極高、排行前 100 名以內」的必點【國語流行歌曲】。
 ⚠️ 條件嚴格限制：
 1. 語言限制：只能是「國語(中文)」歌曲，絕對不要包含台語歌、粵語歌、英語歌或國外歌曲。
-2. 歌詞："lyrics" 須包含完整主歌與副歌（可省略間奏重複段），勿輸出過長重複段落。
-3. 不可重複：不要與以下歌曲重複：${avoidList}。
-4. 只回傳 JSON 陣列，不要 Markdown 或說明文字。格式：[{"singer":"...","title":"...","lyrics":"..."}]`;
+2. 不可重複：不要與以下歌曲重複：${avoidList}。
+3. 只回傳 JSON 陣列，不要 Markdown 或說明文字。格式：[{"singer":"...","title":"..."}]
+（不需輸出歌詞，歌詞將由後續從 KKBOX／Google 搜尋取得。）`;
+        }
+
+        /**
+         * 正規化歌詞文字（統一換行、去除多餘空行）。
+         * @param {string} text
+         * @returns {string}
+         */
+        function normalizeLyricsText(text) {
+            if (!text) return '';
+            return String(text)
+                .replace(/\r\n/g, '\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+
+        /**
+         * 判斷歌詞是否足夠完整（非片段或摘要）。
+         * @param {string} lyrics
+         * @returns {boolean}
+         */
+        function isLyricsCompleteEnough(lyrics) {
+            const text = normalizeLyricsText(lyrics);
+            if (text.length < 120) return false;
+            const lines = text.split('\n').filter((line) => line.trim().length > 0);
+            return lines.length >= 4;
+        }
+
+        /**
+         * 建立以 Google Search 查詢完整歌詞（KKBOX／Google）與 YouTube 的 prompt。
+         * @param {string} singer
+         * @param {string} title
+         * @returns {string}
+         */
+        function buildSongMetadataLookupPrompt(singer, title) {
+            const query = `${singer || ''} ${title || ''}`.trim();
+            return `請使用 Google 搜尋，為歌曲「${query}」完成以下兩項：
+1. 【完整歌詞】優先搜尋 KKBOX（kkbox.com/tw/lyric）、MOO、或 Google「${query} 歌詞」，取得繁體中文【完整歌詞全文】，須含所有主歌、副歌、橋段（可省略間奏重複段），不可只回傳幾句片段、摘要或開頭。
+2. 【YouTube】找到官方 MV 或高品質演唱影片的真實連結。
+
+只回傳一行 JSON，不要 Markdown：
+{"lyrics":"完整歌詞正文，段落間用\\n換行","ytUrl":"https://www.youtube.com/watch?v=XXXXXXXXXXX"}
+規則：
+- lyrics、ytUrl 必須來自搜尋到的真實網頁內容，不可憑記憶捏造。
+- 歌詞勿含網址、來源說明、搜尋建議或評論，只輸出歌詞正文。
+- ytUrl 不可猜測 11 碼 video ID。`;
+        }
+
+        /**
+         * 建立僅查詢完整歌詞的 prompt（KKBOX／Google 補搜用）。
+         * @param {string} singer
+         * @param {string} title
+         * @returns {string}
+         */
+        function buildLyricsLookupPrompt(singer, title) {
+            const query = `${singer || ''} ${title || ''}`.trim();
+            return `請使用 Google 搜尋「${query} 歌詞 site:kkbox.com」或 KKBOX、Google 歌詞頁，取得【完整繁體中文歌詞全文】。
+只回傳一行 JSON，不要 Markdown：{"lyrics":"..."}
+要求：
+1. 須含整首歌所有主歌、副歌、橋段，不可摘要、不可只回幾句。
+2. 保留原本段落換行（\\n），段落間可空一行。
+3. 勿含網址、來源、標題說明或任何非歌詞文字。`;
         }
 
         /**
@@ -1288,61 +1348,119 @@
         }
 
         /**
-         * 從 Gemini（含 Google Search grounding）回應解析 YouTube watch 網址。
+         * 從 Gemini（含 Google Search grounding）回應解析完整歌詞與 YouTube 網址。
          * @param {object} data - generateContent API 回應
-         * @returns {string}
+         * @returns {{ lyrics: string, ytUrl: string }}
          */
-        function parseYoutubeUrlFromGeminiSearch(data) {
+        function parseSongMetadataFromGeminiSearch(data) {
+            let ytUrl = '';
+            let lyrics = '';
+
             const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
             for (const chunk of chunks) {
                 const uri = chunk.web?.uri || '';
-                if (/youtube\.com|youtu\.be/i.test(uri)) {
+                if (!ytUrl && /youtube\.com|youtu\.be/i.test(uri)) {
                     const id = extractVideoID(uri);
                     if (id && id.length === 11) {
-                        return `https://www.youtube.com/watch?v=${id}`;
+                        ytUrl = `https://www.youtube.com/watch?v=${id}`;
                     }
                 }
             }
 
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (!text) return '';
+            if (!text) return { lyrics, ytUrl };
 
             const cleaned = text.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
             try {
                 const parsed = JSON.parse(cleaned);
-                const url = parsed.ytUrl || parsed.url || parsed.youtubeUrl || '';
-                const id = extractVideoID(url);
-                if (id && id.length === 11) {
-                    return `https://www.youtube.com/watch?v=${id}`;
+                const rawLyrics = parsed.lyrics || parsed.lyric || '';
+                if (rawLyrics) lyrics = normalizeLyricsText(String(rawLyrics));
+                if (!ytUrl) {
+                    const url = parsed.ytUrl || parsed.url || parsed.youtubeUrl || '';
+                    const id = extractVideoID(url);
+                    if (id && id.length === 11) {
+                        ytUrl = `https://www.youtube.com/watch?v=${id}`;
+                    }
                 }
             } catch (_) {
-                /* 非 JSON 時改以正則擷取 */
+                if (!lyrics && cleaned.length > 80 && !cleaned.trim().startsWith('{')) {
+                    lyrics = normalizeLyricsText(cleaned);
+                }
             }
 
-            return extractYoutubeWatchUrlFromText(text);
+            if (!ytUrl) ytUrl = extractYoutubeWatchUrlFromText(text);
+            return { lyrics, ytUrl };
         }
 
         /**
-         * 為每首推薦歌曲以 Google Search 解析真實 YouTube 連結。
+         * 從 Gemini 搜尋回應解析 YouTube watch 網址。
+         * @param {object} data
+         * @returns {string}
+         */
+        function parseYoutubeUrlFromGeminiSearch(data) {
+            return parseSongMetadataFromGeminiSearch(data).ytUrl;
+        }
+
+        /**
+         * 為每首歌以 Google Search 取得完整歌詞（KKBOX／Google）與 YouTube 連結。
          * @param {string} apiKey
          * @param {object[]} songList
-         * @param {(current: number, total: number, song: object) => void} [onProgress]
+         * @param {(current: number, total: number, song: object, phase?: string) => void} [onProgress]
          * @returns {Promise<object[]>}
          */
-        async function resolveYoutubeUrlsForSongs(apiKey, songList, onProgress) {
+        async function resolveSongMetadataForSongs(apiKey, songList, onProgress) {
             const results = [];
             for (let i = 0; i < songList.length; i++) {
                 const song = songList[i];
-                if (onProgress) onProgress(i + 1, songList.length, song);
+                if (onProgress) onProgress(i + 1, songList.length, song, 'metadata');
+
+                let lyrics = '';
+                let ytUrl = '';
+
                 try {
-                    const lookupPrompt = buildYoutubeLookupPrompt(song.singer, song.title);
-                    const searchData = await callGeminiWithGoogleSearch(apiKey, lookupPrompt);
-                    const ytUrl = parseYoutubeUrlFromGeminiSearch(searchData);
-                    results.push({ ...song, ytUrl });
+                    const metaPrompt = buildSongMetadataLookupPrompt(song.singer, song.title);
+                    const searchData = await callGeminiWithGoogleSearch(apiKey, metaPrompt);
+                    const meta = parseSongMetadataFromGeminiSearch(searchData);
+                    lyrics = meta.lyrics;
+                    ytUrl = meta.ytUrl;
                 } catch (err) {
-                    console.warn('YouTube 搜尋失敗:', song.title, err);
-                    results.push({ ...song, ytUrl: '' });
+                    console.warn('歌詞/YouTube 搜尋失敗:', song.title, err);
                 }
+
+                if (!isLyricsCompleteEnough(lyrics)) {
+                    try {
+                        if (onProgress) onProgress(i + 1, songList.length, song, 'lyrics');
+                        const lyricsData = await callGeminiWithGoogleSearch(
+                            apiKey,
+                            buildLyricsLookupPrompt(song.singer, song.title)
+                        );
+                        const retryLyrics = parseSongMetadataFromGeminiSearch(lyricsData).lyrics;
+                        if (retryLyrics && retryLyrics.length > (lyrics || '').length) {
+                            lyrics = retryLyrics;
+                        }
+                    } catch (err) {
+                        console.warn('歌詞補搜失敗:', song.title, err);
+                    }
+                }
+
+                if (!ytUrl) {
+                    try {
+                        const ytData = await callGeminiWithGoogleSearch(
+                            apiKey,
+                            buildYoutubeLookupPrompt(song.singer, song.title)
+                        );
+                        ytUrl = parseYoutubeUrlFromGeminiSearch(ytData);
+                    } catch (err) {
+                        console.warn('YouTube 補搜失敗:', song.title, err);
+                    }
+                }
+
+                results.push({
+                    ...song,
+                    lyrics: isLyricsCompleteEnough(lyrics) ? lyrics : (lyrics || '暫無歌詞'),
+                    ytUrl
+                });
+
                 if (i < songList.length - 1) {
                     await new Promise((resolve) => setTimeout(resolve, 400));
                 }
@@ -1438,12 +1556,15 @@
                 const textResult = extractGeminiText(data);
                 const recommendedSongs = parseGeminiSongsJson(textResult, finishReason);
 
-                aiStatusText.innerHTML = '⏳ 正在搜尋 YouTube 連結...';
-                const newSongs = await resolveYoutubeUrlsForSongs(
+                aiStatusText.innerHTML = '⏳ 正在搜尋完整歌詞與 YouTube...';
+                const newSongs = await resolveSongMetadataForSongs(
                     apiKey,
                     recommendedSongs,
-                    (current, total, song) => {
-                        aiStatusText.innerHTML = `⏳ 搜尋 YouTube (${current}/${total})：${song.title || ''}`;
+                    (current, total, song, phase) => {
+                        const label = phase === 'lyrics'
+                            ? '補搜 KKBOX／Google 完整歌詞'
+                            : '搜尋完整歌詞與 YouTube';
+                        aiStatusText.innerHTML = `⏳ ${label} (${current}/${total})：${song.title || ''}`;
                     }
                 );
 
