@@ -777,8 +777,79 @@
         // Supabase 資料庫操作區塊
         // =========================================
 
+        /**
+         * 正規化歌曲 id（Supabase bigint 在 JSON 中可能為數字或字串）。
+         * @param {string|number} id
+         * @returns {string|number}
+         */
+        function normalizeSongId(id) {
+            if (id === null || id === undefined || id === '') return id;
+            const n = Number(id);
+            if (!Number.isNaN(n) && Number.isSafeInteger(n)) return n;
+            return String(id);
+        }
+
+        /**
+         * 比對兩個歌曲 id 是否相同。
+         * @param {string|number} a
+         * @param {string|number} b
+         * @returns {boolean}
+         */
+        function sameSongId(a, b) {
+            return normalizeSongId(a) === normalizeSongId(b);
+        }
+
+        /**
+         * 依 id 尋找歌曲。
+         * @param {string|number} id
+         * @returns {object|undefined}
+         */
+        function findSongById(id) {
+            return songs.find(s => sameSongId(s.id, id));
+        }
+
+        /**
+         * 確認雲端已寫入預期的歌曲欄位（避免 UPDATE 被 RLS 靜默略過）。
+         * @param {string|number} songId
+         * @param {{ title: string, ytId: string }} expected
+         */
+        async function confirmSongSavedOnCloud(songId, expected) {
+            const dbId = normalizeSongId(songId);
+            const { data, error } = await supabaseClient
+                .from('songs')
+                .select('id, title, ytId')
+                .eq('id', dbId)
+                .eq('user_id', currentUser.id)
+                .maybeSingle();
+
+            if (error) throw error;
+            if (!data) {
+                throw new Error('更新失敗：找不到該首歌曲，可能已刪除或無權限存取。');
+            }
+            if (data.title !== expected.title || data.ytId !== expected.ytId) {
+                throw new Error('更新未寫入雲端：請至 Supabase 後台為 songs 表啟用 UPDATE 政策（允許使用者更新自己的歌曲）。');
+            }
+        }
+
+        /**
+         * 重置「新增與編輯」表單為新增模式。
+         */
+        function resetEditFormToCreateMode() {
+            editingSongId = null;
+            document.getElementById('edit-singer').value = '';
+            document.getElementById('edit-title').value = '';
+            document.getElementById('edit-yt').value = '';
+            document.getElementById('edit-lyrics').value = '';
+            document.getElementById('form-mode-title').innerText = '新增歌曲';
+            document.getElementById('btn-save-song').innerText = '新增至雲端 (Supabase)';
+            document.getElementById('btn-cancel-edit').style.display = 'none';
+        }
+
+        /**
+         * @returns {Promise<boolean>}
+         */
         async function fetchSongsFromSupabase() {
-            if (!currentUser) return;
+            if (!currentUser) return false;
             try {
                 const { data, error } = await supabaseClient
                     .from('songs')
@@ -791,9 +862,11 @@
                 
                 songs = data || [];
                 renderSongGrid();
-                renderEditSongList(); 
+                renderEditSongList();
+                return true;
             } catch (err) {
                 console.error("無法從 Supabase 讀取資料:", err);
+                return false;
             }
         }
 
@@ -913,24 +986,43 @@
                 showToast("⏳ 正在儲存到雲端資料庫...", 1000); 
                 
                 if (editingSongId) {
+                    const existing = findSongById(editingSongId);
+                    if (!existing) {
+                        throw new Error('找不到要編輯的歌曲，請重新整理頁面後再試。');
+                    }
+
+                    const songId = normalizeSongId(existing.id);
+                    const payload = { title: title, singer: singer, ytId: ytId, lyrics: lyrics };
+
                     const { error } = await supabaseClient
                         .from('songs')
-                        .update({ title: title, singer: singer, ytId: ytId, lyrics: lyrics })
-                        .eq('id', editingSongId)
+                        .update(payload)
+                        .eq('id', songId)
                         .eq('user_id', currentUser.id);
 
                     if (error) throw error;
 
+                    try {
+                        await confirmSongSavedOnCloud(songId, { title: title, ytId: ytId });
+                    } catch (verifyErr) {
+                        const { error: upsertErr } = await supabaseClient
+                            .from('songs')
+                            .upsert({
+                                id: songId,
+                                title: title,
+                                singer: singer,
+                                ytId: ytId,
+                                lyrics: lyrics,
+                                user_id: currentUser.id,
+                                sort_order: existing.sort_order ?? 0
+                            }, { onConflict: 'id' });
+
+                        if (upsertErr) throw verifyErr;
+                        await confirmSongSavedOnCloud(songId, { title: title, ytId: ytId });
+                    }
+
                     showToast("✅ 歌曲資料已成功更新！");
-                    
-                    editingSongId = null;
-                    document.getElementById('edit-singer').value = '';
-                    document.getElementById('edit-title').value = '';
-                    document.getElementById('edit-yt').value = '';
-                    document.getElementById('edit-lyrics').value = '';
-                    document.getElementById('form-mode-title').innerText = "新增歌曲";
-                    document.getElementById('btn-save-song').innerText = "新增至雲端 (Supabase)";
-                    document.getElementById('btn-cancel-edit').style.display = 'none';
+                    resetEditFormToCreateMode();
                 } else {
                     const maxOrder = songs.length > 0 ? Math.max(...songs.map(s => s.sort_order || 0)) : -1;
                     
@@ -950,7 +1042,10 @@
                     showToast("🎉 歌曲已成功新增！");
                 }
 
-                await fetchSongsFromSupabase();
+                const reloaded = await fetchSongsFromSupabase();
+                if (!reloaded) {
+                    throw new Error('儲存後無法從雲端重新載入歌曲庫，請重新整理頁面確認是否已寫入。');
+                }
                 switchView('songs'); 
                 
             } catch (err) {
@@ -959,7 +1054,7 @@
         }
 
         function editSong(id) {
-            const song = songs.find(s => s.id == id);
+            const song = findSongById(id);
             if (!song) return;
             
             editingSongId = song.id;
@@ -976,16 +1071,7 @@
         }
 
         function cancelEdit() {
-            editingSongId = null;
-            document.getElementById('edit-singer').value = '';
-            document.getElementById('edit-title').value = '';
-            document.getElementById('edit-yt').value = '';
-            document.getElementById('edit-lyrics').value = '';
-            
-            document.getElementById('form-mode-title').innerText = "新增歌曲";
-            document.getElementById('btn-save-song').innerText = "新增至雲端 (Supabase)";
-            document.getElementById('btn-cancel-edit').style.display = 'none';
-            
+            resetEditFormToCreateMode();
             switchView('songs'); 
         }
 
@@ -995,7 +1081,7 @@
             if (checkboxes.length === 0) return alert("請先勾選要刪除的歌曲！");
             if (!confirm(`確定要永久刪除這 ${checkboxes.length} 首歌曲嗎？`)) return;
 
-            const idsToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value));
+            const idsToDelete = Array.from(checkboxes).map(cb => normalizeSongId(cb.value));
 
             try {
                 showToast(`⏳ 正在刪除 ${idsToDelete.length} 首歌曲...`, 1000);
@@ -1007,7 +1093,7 @@
 
                 if (error) throw error;
 
-                songs = songs.filter(s => !idsToDelete.includes(s.id));
+                songs = songs.filter(s => !idsToDelete.some(delId => sameSongId(s.id, delId)));
                 renderSongGrid();
                 renderEditSongList(); 
                 showToast("🗑️ 批量刪除已完成。");
@@ -1364,7 +1450,7 @@
                 if (songs.length > 0) {
                     const fixPromises = songs.map((s, idx) => {
                         if (s.sort_order !== idx) {
-                            return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', s.id).eq('user_id', currentUser.id);
+                            return supabaseClient.from('songs').update({ sort_order: idx }).eq('id', normalizeSongId(s.id)).eq('user_id', currentUser.id);
                         }
                         return null;
                     }).filter(p => p !== null);
@@ -1474,10 +1560,10 @@
                 li.addEventListener('drop', function(e) {
                     if (e.stopPropagation) e.stopPropagation();
                     if (dragSrcEl !== this) {
-                        const srcId = parseInt(dragSrcEl.dataset.id);
-                        const targetId = parseInt(this.dataset.id);
-                        const srcIndex = songs.findIndex(s => s.id === srcId);
-                        const targetIndex = songs.findIndex(s => s.id === targetId);
+                        const srcId = dragSrcEl.dataset.id;
+                        const targetId = this.dataset.id;
+                        const srcIndex = songs.findIndex(s => sameSongId(s.id, srcId));
+                        const targetIndex = songs.findIndex(s => sameSongId(s.id, targetId));
                         
                         const [movedItem] = songs.splice(srcIndex, 1);
                         songs.splice(targetIndex, 0, movedItem);
@@ -1507,7 +1593,7 @@
                     const { error } = await supabaseClient
                         .from('songs')
                         .update({ sort_order: song.sort_order })
-                        .eq('id', song.id)
+                        .eq('id', normalizeSongId(song.id))
                         .eq('user_id', currentUser.id);
 
                     if (error) {
@@ -1922,10 +2008,12 @@
                     ${singerHtml}
                     <strong>${song.title}</strong>
                     <div class="card-btn-group">
-                        <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
-                        <button class="edit-song-btn" onclick="editSong(${song.id})" title="編輯歌曲資料">✏️</button>
+                        <button class="add-to-playlist-btn" title="加入播放列表"></button>
+                        <button class="edit-song-btn" title="編輯歌曲資料">✏️</button>
                     </div>
                 `;
+                card.querySelector('.add-to-playlist-btn').addEventListener('click', () => addToPlaylist(song.id));
+                card.querySelector('.edit-song-btn').addEventListener('click', () => editSong(song.id));
                 grid.appendChild(card);
             });
         }
@@ -2002,7 +2090,7 @@
         }
 
         function addToPlaylist(songId) {
-            const song = songs.find(s => s.id === songId);
+            const song = findSongById(songId);
             if (song) {
                 playlist.push(song);
                 renderPlaylist();
