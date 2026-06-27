@@ -574,6 +574,9 @@
         let progressInterval = null;
 
         let isSingleLoop = false; 
+        const BROKEN_SONG_LABEL = '(已損壞)';
+        /** @type {Set<string>} YouTube 讀取失敗的歌曲暫存標記 */
+        const brokenSongKeys = new Set();
 
         /** @type {{ lines: { time: number|null, text: string }[] }|null} 目前歌曲的時間軸歌詞 */
         let currentLyricsTimed = null;
@@ -829,6 +832,94 @@
          */
         function findSongById(id) {
             return songs.find(s => sameSongId(s.id, id));
+        }
+
+        /**
+         * 產生用於前端標記 YouTube 損壞狀態的 key。
+         * @param {object} song
+         * @returns {string}
+         */
+        function getBrokenSongKey(song) {
+            if (!song) return '';
+            if (song.ytId) return `yt:${song.ytId}`;
+            return `title:${song.singer || ''}|${song.title || ''}`;
+        }
+
+        /**
+         * 判斷歌曲是否已被標記為 YouTube 損壞。
+         * @param {object} song
+         * @returns {boolean}
+         */
+        function isSongMarkedBroken(song) {
+            const key = getBrokenSongKey(song);
+            return !!song?.isBroken || (key ? brokenSongKeys.has(key) : false);
+        }
+
+        /**
+         * 取得 UI 顯示用歌名，損壞歌曲會在歌名右側加上提示。
+         * @param {object} song
+         * @returns {string}
+         */
+        function getSongDisplayTitle(song) {
+            const baseTitle = song?.singer ? `${song.singer} - ${song.title}` : (song?.title || '');
+            if (!isSongMarkedBroken(song) || baseTitle.includes(BROKEN_SONG_LABEL)) return baseTitle;
+            return `${baseTitle}${BROKEN_SONG_LABEL}`;
+        }
+
+        /**
+         * 將指定歌曲標記為 YouTube 損壞並同步更新歌曲庫與播放列 UI。
+         * @param {object} song
+         */
+        function markSongAsBroken(song) {
+            const brokenKey = getBrokenSongKey(song);
+            if (!brokenKey) return;
+
+            brokenSongKeys.add(brokenKey);
+
+            [...songs, ...playlist].forEach(item => {
+                if (getBrokenSongKey(item) === brokenKey) item.isBroken = true;
+            });
+
+            renderSongGrid(songs);
+            renderEditSongList();
+            renderPlaylist();
+            updateLyricsView();
+        }
+
+        /**
+         * 從指定索引往後播放下一首未標記損壞的歌曲。
+         * @param {number} fromIndex
+         */
+        function playNextAvailable(fromIndex = currentPlayIndex) {
+            if (playlist.length === 0) return;
+
+            for (let offset = 1; offset <= playlist.length; offset++) {
+                const nextIndex = (fromIndex + offset + playlist.length) % playlist.length;
+                if (!isSongMarkedBroken(playlist[nextIndex])) {
+                    playSong(nextIndex);
+                    return;
+                }
+            }
+
+            showToast("⚠️ 播放列表內沒有其他可播放歌曲。", 3000);
+            if (player && typeof player.stopVideo === 'function') player.stopVideo();
+            currentPlayIndex = -1;
+            renderPlaylist();
+            updateLyricsView();
+        }
+
+        /**
+         * YouTube IFrame API 回報讀取失敗時，標記歌曲並自動跳過。
+         * @param {{ data?: number }} event
+         */
+        function handleYoutubeLoadError(event) {
+            const failedSong = playlist[currentPlayIndex];
+            if (!failedSong) return;
+
+            markSongAsBroken(failedSong);
+            const codeText = event?.data ? `（錯誤碼 ${event.data}）` : '';
+            showToast(`⚠️「${failedSong.title}」在 YouTube 已損壞，已自動跳過${codeText}`, 3500);
+            playNextAvailable(currentPlayIndex);
         }
 
         /**
@@ -1699,7 +1790,7 @@
                 li.className = 'sortable-item';
                 li.draggable = true;
                 li.dataset.id = song.id;
-                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                let displayTitle = getSongDisplayTitle(song);
                 li.innerHTML = `<div class="drag-handle" title="按住拖曳">☰</div><div style="color:#fff; flex:1; font-size:14px;">${displayTitle}</div>`;
                 
                 li.addEventListener('dragstart', function(e) {
@@ -1846,7 +1937,8 @@
                     title: libSong.title,
                     singer: libSong.singer,
                     ytId: libSong.ytId,
-                    lyrics: libSong.lyrics
+                    lyrics: libSong.lyrics,
+                    isBroken: isSongMarkedBroken(libSong)
                 };
                 if (merged.title !== plItem.title || merged.ytId !== plItem.ytId ||
                     (merged.singer || '') !== (plItem.singer || '') ||
@@ -1981,12 +2073,19 @@
             isIntendedPause = false;
             currentPlayIndex = index;
             const song = playlist[index];
+            if (isSongMarkedBroken(song)) {
+                showToast(`⚠️「${song.title}」已標記為 YouTube 損壞，已自動跳過`, 3000);
+                playNextAvailable(index);
+                return;
+            }
             switchView('youtube'); 
             clearLoop();
 
             if (!song.ytId || song.ytId.length !== 11) {
-                alert("無效的 Youtube ID，請編輯該歌曲！");
-                switchView('songs'); return;
+                markSongAsBroken(song);
+                showToast(`⚠️「${song.title}」的 YouTube ID 無效，已自動跳過`, 3500);
+                playNextAvailable(index);
+                return;
             }
 
             const origin = window.location.origin; 
@@ -2033,7 +2132,8 @@
                                     playNext(); 
                                 }
                             } 
-                        }
+                        },
+                        'onError': handleYoutubeLoadError
                     }
                 });
             } else {
@@ -2173,9 +2273,7 @@
 
         function playNext() {
             if (playlist.length === 0) return;
-            let nextIndex = currentPlayIndex + 1;
-            if (nextIndex >= playlist.length) nextIndex = 0; 
-            playSong(nextIndex);
+            playNextAvailable(currentPlayIndex);
         }
 
         function toggleLyrics() {
@@ -2240,11 +2338,12 @@
                 card.className = 'song-card';
                 
                 let singerHtml = song.singer ? `<span style="font-size:12px; color:#4facfe; margin-bottom:2px;">${song.singer}</span>` : '';
+                const displayTitle = getSongDisplayTitle(song);
 
                 card.innerHTML = `
                     <input type="checkbox" class="song-select-cb" value="${song.id}" title="勾選以批量刪除">
                     ${singerHtml}
-                    <strong>${song.title}</strong>
+                    <strong>${displayTitle}</strong>
                     <div class="card-btn-group">
                         <button class="add-to-playlist-btn" onclick="addToPlaylist(${song.id})" title="加入播放列表"></button>
                         <button class="edit-song-btn" onclick="editSong(${song.id})" title="編輯歌曲資料">✏️</button>
@@ -2295,7 +2394,7 @@
                 li.draggable = true;
                 li.dataset.index = index;
                 if (index === currentPlayIndex) li.classList.add('playing');
-                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                let displayTitle = getSongDisplayTitle(song);
                 li.innerHTML = `
                     <div class="drag-handle-playlist" title="按住拖曳">☰</div>
                     <span onclick="playSong(${index})" style="flex:1; cursor:pointer;">${index + 1}. ${displayTitle}</span>
@@ -2494,7 +2593,7 @@
 
             if (currentPlayIndex >= 0 && currentPlayIndex < playlist.length) {
                 const song = playlist[currentPlayIndex];
-                let displayTitle = song.singer ? `${song.singer} - ${song.title}` : song.title;
+                let displayTitle = getSongDisplayTitle(song);
                 document.getElementById('lyrics-title').innerText = displayTitle;
                 const lyrics = song.lyrics || "無歌詞";
                 const parsed = parseTimedLyrics(lyrics);
