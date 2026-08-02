@@ -2105,13 +2105,18 @@
                             if (event.data === YT.PlayerState.PAUSED) {
                                 stopLyricsSyncLoop();
                                 // 如果「不是」使用者主動按下暫停按鈕，且網頁現在被隱藏 (退至桌面或鎖屏)
-                                if (!isIntendedPause && document.hidden) {
-                                    console.log("偵測到背景被系統自動暫停，強制喚醒！");
-                                    setTimeout(() => {
-                                        if (player && typeof player.playVideo === 'function') {
+                                // 新加關掉螢幕不暫停的 code：
+                                // 1. 移除 && document.hidden，因為手機關閉螢幕瞬間不一定會被判定為 hidden，導致攔截失敗。
+                                // 2. 改用 setInterval 取代 setTimeout，防止系統休眠把單次延遲執行吃掉。
+                                if (!isIntendedPause) {
+                                    console.log("偵測到系統(或關螢幕)自動暫停，強制喚醒！");
+                                    let wakeInterval = setInterval(() => {
+                                        if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() !== YT.PlayerState.PLAYING) {
                                             player.playVideo();
+                                        } else {
+                                            clearInterval(wakeInterval); // 成功播放後清除循環
                                         }
-                                    }, 100);
+                                    }, 300);
                                 }
                             }
 
